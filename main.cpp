@@ -42,14 +42,13 @@ void handle_flash_calibration_loop() {
     g_shared_state.ffb.actuators_enabled = false;
 
     // Phase 1: Center position is wherever the wheel is NOW
-    int32_t current_raw = g_shared_state.sensor.wheel_position.load();
-    // Because wheel_position might already have an offset applied, we need the ABSOLUTE raw angle
-    // Wait, the easiest way is to just add the current position to the existing offset
-    // For simplicity, we just trigger a Core1 reset of the center offset, but Core1 is running.
-    // Let's do it via flash data. We need the absolute raw angle.
-    // We will just read the actual AS5600 via I2C? No, Core 1 owns I2C.
-    // Core1's parser gives us position = raw_angle - center_offset.
-    // So absolute raw_angle = position + center_offset.
+    // We grab the absolute raw angle directly from the sensor state and modulo it
+    // to strictly keep it within 0-4095.
+    int32_t current_absolute_raw = g_shared_state.sensor.absolute_raw_angle.load();
+    int32_t raw_modulo = current_absolute_raw % 4096;
+    if (raw_modulo < 0) {
+        raw_modulo += 4096;
+    }
     
     // Actually, just save the current `position` as the new offset to add.
     // We'll leave that to the flash struct.
@@ -94,11 +93,7 @@ void handle_flash_calibration_loop() {
 
     // Save to flash
     FlashCalibrationData data;
-    // We need the absolute center. Core 1 is using some old center.
-    // We don't have a direct way to ask Core 1 for the raw angle right now without modifying shared_state.
-    // Let's just assume we only do this once, or we add a field to SharedState for the absolute center.
-    // *Implementation Note*: In a full version, we'd add `absolute_raw_angle` to SensorState.
-    data.center_position = 0; // Placeholder
+    data.center_position = raw_modulo;
     data.accel_min = accel_min;
     data.accel_max = accel_max;
     data.brake_min = brake_min;
@@ -132,6 +127,7 @@ int main() {
     FlashCalibrationData cal_data;
     bool has_flash = g_flash.load(cal_data);
     if (has_flash) {
+        g_shared_state.center_offset.store(cal_data.center_position);
         g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
                                  cal_data.brake_min, cal_data.brake_max);
     } else {

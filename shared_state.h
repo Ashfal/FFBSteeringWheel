@@ -12,7 +12,7 @@
 enum class Direction : uint8_t {
     CW  = 0,
     CCW = 1,
-    BRAKE = 2   // Both PWMs off, EN low
+    OFF = 2   // Both PWMs off, EN low
 };
 
 // =========================================================================
@@ -23,6 +23,7 @@ enum class Direction : uint8_t {
 struct SensorState {
     std::atomic<int32_t>  wheel_position{0};     // Accumulated raw counts from center
     std::atomic<int32_t>  wheel_velocity{0};     // Raw counts / ms (signed)
+    std::atomic<int32_t>  absolute_raw_angle{0}; // Total absolute raw counts ignoring center offset
     std::atomic<uint8_t>  error_flags{0};        // Bit 0: MH, Bit 1: ML, Bit 2: MD missing
 
     // Error flag bits
@@ -145,6 +146,8 @@ struct SharedState {
     EffectState      ffb;
     CalibrationLUTs  cal_luts;
     StatusState      led_status;
+
+    std::atomic<int32_t> center_offset{0}; // Read by Core 1 on boot
 
     // Button state (Core 0 only writes, Core 0 only reads for USB)
     std::atomic<uint16_t> buttons{0};

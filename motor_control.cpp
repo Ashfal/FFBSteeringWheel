@@ -41,19 +41,19 @@ void MotorControl::init() {
     gpio_set_dir(PIN_PWM_EN, GPIO_OUT);
     gpio_put(PIN_PWM_EN, 0); // Disable initially
 
-    current_direction_ = Direction::BRAKE;
+    current_direction_ = Direction::OFF;
 }
 
 void MotorControl::emergency_stop() {
     pwm_set_gpio_level(PIN_PWM_LPWM, 0);
     pwm_set_gpio_level(PIN_PWM_RPWM, 0);
     gpio_put(PIN_PWM_EN, 0);
-    current_direction_ = Direction::BRAKE;
+    current_direction_ = Direction::OFF;
 }
 
 void MotorControl::set_target(uint16_t pwm, Direction direction, int32_t velocity) {
-    if (direction == Direction::BRAKE || pwm == 0) {
-        apply_pwm(0, Direction::BRAKE);
+    if (direction == Direction::OFF || pwm == 0) {
+        apply_pwm(0, Direction::OFF);
         return;
     }
 
@@ -104,7 +104,7 @@ void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
         current_direction_ = dir;
     }
 
-    if (dir == Direction::BRAKE || pwm == 0) {
+    if (dir == Direction::OFF || pwm == 0) {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, 0);
         gpio_put(PIN_PWM_EN, 0);

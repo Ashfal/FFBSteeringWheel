@@ -13,6 +13,7 @@ public:
 
     int32_t get_position() const { return accumulated_position_; }
     int32_t get_velocity() const { return velocity_; }
+    int32_t get_absolute_raw() const { return (turn_count_ * 4096) + last_raw_angle_; }
     uint8_t get_error_flags() const { return error_flags_; }
 
     // Set the center offset (from flash calibration)
@@ -22,6 +23,7 @@ private:
     // Position tracking
     int32_t  accumulated_position_ = 0;   // Continuous position from center
     int32_t  center_offset_ = 0;          // Flash-saved center position
+    int32_t  turn_count_ = 0;             // Number of full encoder wraps
     uint16_t last_raw_angle_ = 0;
     bool     first_read_ = true;
 
@@ -31,7 +33,4 @@ private:
 
     // Error state
     uint8_t  error_flags_ = 0;
-
-    // Handle 12-bit encoder wrap-around with 1:2 gear ratio
-    int32_t  compute_delta(uint16_t current, uint16_t previous);
 };

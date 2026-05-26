@@ -55,7 +55,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
                                   const EffectState& effects) {
     FFBOutput out;
     out.pwm = 0;
-    out.direction = Direction::BRAKE;
+    out.direction = Direction::OFF;
 
     // ---- Electronic End-Stop (Early Exit) ----
     // If wheel is beyond physical limit, apply a proportional reverse spring
@@ -183,7 +183,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         out.direction = Direction::CCW;
     } else {
         out.pwm = 0;
-        out.direction = Direction::BRAKE;
+        out.direction = Direction::OFF;
     }
 
     return out;

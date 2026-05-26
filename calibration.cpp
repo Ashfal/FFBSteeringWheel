@@ -28,12 +28,14 @@ static uint16_t find_zero_pwm(Direction dir, MotorControl& motor, I2CDMA& i2c, A
     uint16_t test_pwm = 0;
     
     // Ensure we are stopped
-    motor.set_target(0, Direction::BRAKE, 0);
+    motor.set_target(0, Direction::OFF, 0);
     sleep_ms(200);
 
     while (test_pwm < PWM_WRAP) {
         test_pwm += 10;
-        motor.set_target(test_pwm, dir, 0);
+        // Pass STALL_VELOCITY_THRESHOLD to bypass the stall governor here, 
+        // since we actively NEED to exceed it to measure static friction.
+        motor.set_target(test_pwm, dir, STALL_VELOCITY_THRESHOLD);
         
         // Wait briefly for movement
         sleep_ms(10);
@@ -53,7 +55,7 @@ static uint16_t find_zero_pwm(Direction dir, MotorControl& motor, I2CDMA& i2c, A
         }
     }
     
-    motor.set_target(0, Direction::BRAKE, 0);
+    motor.set_target(0, Direction::OFF, 0);
     sleep_ms(100);
     return test_pwm;
 }
@@ -76,6 +78,9 @@ static int32_t measure_max_speed(uint16_t pwm, Direction dir, MotorControl& moto
         int32_t vel = parser.get_velocity();
         int32_t pos = parser.get_position();
         
+        // Update the motor target so the stall governor releases its clamp as we speed up
+        motor.set_target(pwm, dir, vel);
+        
         // Track absolute maximum velocity
         if (dir == Direction::CW && vel > max_vel) max_vel = vel;
         if (dir == Direction::CCW && vel < max_vel) max_vel = vel; // Note: max_vel will be negative
@@ -96,7 +101,7 @@ static int32_t measure_max_speed(uint16_t pwm, Direction dir, MotorControl& moto
         }
     }
     
-    motor.set_target(0, Direction::BRAKE, 0);
+    motor.set_target(0, Direction::OFF, 0);
     sleep_ms(100); // Wait for wheel to settle
     
     // Convert to absolute value for LUTs

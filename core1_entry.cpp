@@ -59,6 +59,7 @@ static void dma_isr() {
     // Update shared state
     g_state->sensor.wheel_position.store(g_parser.get_position());
     g_state->sensor.wheel_velocity.store(g_parser.get_velocity());
+    g_state->sensor.absolute_raw_angle.store(g_parser.get_absolute_raw());
     g_state->sensor.error_flags.store(g_parser.get_error_flags());
 
     if (!valid) {
@@ -111,6 +112,9 @@ static int64_t timer_callback(alarm_id_t id, void *user_data) {
 void core1_init() {
     g_i2c.init();
     g_parser.init();
+    
+    // Apply flash calibration center
+    g_parser.set_center(g_state->center_offset.load());
     g_motor.init();
 
     // Enable DMA interrupt on Core 1
