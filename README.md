@@ -39,10 +39,6 @@ make -j4
 
 Flash the resulting `ffb_steering_wheel.uf2` to your Pico by holding the BOOTSEL button while plugging it in via USB.
 
-## Recommended License
-
-I recommend using the **MIT License** for this project. It is highly permissive, completely open-source, and allows anyone to use, modify, and distribute the code (including commercially) as long as they include the original copyright notice. A `LICENSE` file containing the MIT License has been included in this repository.
-
 ## Credits & Acknowledgements
 
 The USB HID PID descriptor headers (`usb_ffb_descriptors.h`) and struct definitions utilized in this project are based on the excellent work from the following open-source projects. Huge thanks to them for decoding the complexities of DirectInput FFB:
