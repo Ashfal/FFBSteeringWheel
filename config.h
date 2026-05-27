@@ -52,6 +52,7 @@ constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_P
 
 constexpr uint32_t PWM_FREQ_HZ           = 20000;
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
+constexpr uint16_t FORWARD_MAX_PWM       = 6249;   // Software limit for FFB max force
 
 // =========================================================================
 // BTS7960 MOTOR SAFETY
@@ -61,10 +62,11 @@ constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 constexpr uint16_t DEAD_TIME_US           = 50;
 
 // Stall protection governor:
-// At velocity = 0, max allowed PWM is STALL_PWM_MAX (prevents driver burnout).
-// Linearly scales to full PWM_WRAP at STALL_VELOCITY_THRESHOLD.
-constexpr uint16_t STALL_PWM_MAX          = 500;
-constexpr int32_t  STALL_VELOCITY_THRESHOLD = 200;  // Raw counts/ms
+// Differentiates between moving forward (with the motor) and backwards (against the motor).
+constexpr uint16_t STALL_PWM_MAX                = 1250;
+constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 200;  // Raw counts/ms
+constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 200;  // Raw counts/ms
+constexpr uint16_t BACKWARDS_PWM_MAX            = 500;
 
 // =========================================================================
 // AS5600 SENSOR
@@ -124,16 +126,16 @@ constexpr uint8_t  MAX_EFFECTS           = 40;
 
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
-// PWM levels for speed LUT calibration sweeps (raw PWM values)
-// Corresponds to ~10%, 25%, 50%, 75%, 100% of PWM_WRAP
-constexpr uint16_t CAL_PWM_LEVELS[]      = {
-    PWM_WRAP / 10,        // ~625
-    PWM_WRAP / 4,         // ~1562
-    PWM_WRAP / 2,         // ~3124
-    (PWM_WRAP * 3) / 4,   // ~4686
-    PWM_WRAP              // 6249
+// Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
+// Corresponds to 10%, 25%, 50%, 75%, 100% force
+constexpr int32_t  CAL_FORCE_LEVELS[]    = {
+    1000,
+    2500,
+    5000,
+    7500,
+    10000
 };
-constexpr uint8_t  CAL_PWM_LEVEL_COUNT   = 5;
+constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = 5;
 
 // Minimum sweep distance during calibration (180 degrees in raw counts)
 constexpr int32_t  CAL_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 2;  // 4096

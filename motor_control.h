@@ -5,20 +5,27 @@
 
 class MotorControl {
 public:
+    enum class Direction : uint8_t {
+        OFF = 0,
+        CW  = 1,
+        CCW = 2
+    };
+
     void init();
 
     // Set minimum PWM needed to overcome static friction (from calibration)
-    void set_calibration_zero(uint16_t cw_val, uint16_t ccw_val) {
-        cw_zero_pwm_ = cw_val;
-        ccw_zero_pwm_ = ccw_val;
-    }
+    void set_calibration_zero(uint16_t cw_val, uint16_t ccw_val);
 
     // Set the target PWM and direction.
     // Handles dead-time, friction compensation, and stall protection.
-    // velocity is required for the stall governor.
-    void set_target(uint16_t pwm, Direction direction, int32_t velocity);
+    // Set physical hardware PWM (-10000 to +10000 scaled internally to FORWARD_MAX_PWM)
+    void set_force(int32_t force, int32_t velocity);
+
+    // Set raw PWM for calibration, with stall governor logic
+    void set_pwm(uint16_t pwm, Direction dir, int32_t velocity);
 
     // Immediate emergency stop
+    void stop();
     void emergency_stop();
 
 private:

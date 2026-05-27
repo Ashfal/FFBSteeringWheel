@@ -4,17 +4,6 @@
 #include "config.h"
 #include "usb_ffb_descriptors.h"
 #include "hardware/sync.h"
-
-// =========================================================================
-// Direction enum
-// =========================================================================
-
-enum class Direction : uint8_t {
-    CW  = 0,
-    CCW = 1,
-    OFF = 2   // Both PWMs off, EN low
-};
-
 // =========================================================================
 // Core 1 → Core 0  (Written ONLY by Core 1, read by Core 0)
 // Uses atomics — no lock needed.
@@ -94,8 +83,8 @@ struct EffectState {
 struct CalibrationLUTs {
     // Speed LUT: expected maximum raw velocity at each PWM level
     // Index corresponds to CAL_PWM_LEVELS[]
-    int32_t  cw_speed[CAL_PWM_LEVEL_COUNT];
-    int32_t  ccw_speed[CAL_PWM_LEVEL_COUNT];
+    int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
+    int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
 
     // Minimum PWM to overcome static friction (independently per direction)
     uint16_t cw_zero_pwm;

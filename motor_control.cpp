@@ -44,77 +44,117 @@ void MotorControl::init() {
     current_direction_ = Direction::OFF;
 }
 
-void MotorControl::emergency_stop() {
-    pwm_set_gpio_level(PIN_PWM_LPWM, 0);
-    pwm_set_gpio_level(PIN_PWM_RPWM, 0);
-    gpio_put(PIN_PWM_EN, 0);
-    current_direction_ = Direction::OFF;
+void MotorControl::stop() {
+    apply_pwm(0, Direction::OFF);
 }
 
-void MotorControl::set_target(uint16_t pwm, Direction direction, int32_t velocity) {
-    if (direction == Direction::OFF || pwm == 0) {
-        apply_pwm(0, Direction::OFF);
+void MotorControl::emergency_stop() {
+    stop();
+    gpio_put(PIN_PWM_EN, 0);
+}
+
+void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
+    cw_zero_pwm_ = cw_zero;
+    ccw_zero_pwm_ = ccw_zero;
+}
+
+void MotorControl::set_force(int32_t force, int32_t velocity) {
+    if (force == 0) {
+        stop();
         return;
     }
 
-    // ---- Friction Compensation ----
-    // Add the calibrated zero-friction PWM offset
-    uint16_t zero_pwm = (direction == Direction::CW) ? cw_zero_pwm_ : ccw_zero_pwm_;
-    
-    // Scale the requested PWM (0..PWM_WRAP) into the active range (zero_pwm..PWM_WRAP)
-    if (PWM_WRAP > zero_pwm) {
-        uint32_t active_range = PWM_WRAP - zero_pwm;
-        pwm = zero_pwm + ((static_cast<uint32_t>(pwm) * active_range) / PWM_WRAP);
+    Direction dir = (force > 0) ? Direction::CW : Direction::CCW;
+    uint32_t abs_force = (force > 0) ? force : -force;
+    if (abs_force > 10000) abs_force = 10000;
+
+    // Determine the zero PWM offset based on direction
+    uint16_t zero_pwm = (dir == Direction::CW) ? cw_zero_pwm_ : ccw_zero_pwm_;
+
+    // Scale the requested force (0..10000) into the active range (zero_pwm..FORWARD_MAX_PWM)
+    uint32_t pwm = 0;
+    if (FORWARD_MAX_PWM > zero_pwm) {
+        uint32_t active_range = FORWARD_MAX_PWM - zero_pwm;
+        pwm = zero_pwm + ((abs_force * active_range) / 10000);
     }
+    
+    set_pwm(static_cast<uint16_t>(pwm), dir, velocity);
+}
+
+void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
+    if (pwm == 0 || dir == Direction::OFF) {
+        stop();
+        return;
+    }
+
     if (pwm > PWM_WRAP) pwm = PWM_WRAP;
 
     // ---- Stall Protection Governor ----
-    // If the wheel is moving very slowly or stalled, we must limit the max PWM
-    // to prevent the BTS7960 from burning out due to prolonged high current.
+    // Differentiate between moving "forward" (with the motor) and "backwards" (against the motor)
+    bool is_forward = (dir == Direction::CW && velocity > 0) || (dir == Direction::CCW && velocity < 0);
+    bool is_stalled = (velocity == 0);
     uint32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
     
     uint16_t max_allowed_pwm = PWM_WRAP;
     
-    if (abs_velocity < static_cast<uint32_t>(STALL_VELOCITY_THRESHOLD)) {
-        // Interpolate between STALL_PWM_MAX (at v=0) and PWM_WRAP (at v=THRESHOLD)
-        uint32_t range = PWM_WRAP - STALL_PWM_MAX;
-        max_allowed_pwm = STALL_PWM_MAX + ((abs_velocity * range) / STALL_VELOCITY_THRESHOLD);
+    if (is_stalled) {
+        max_allowed_pwm = STALL_PWM_MAX;
+    } else if (is_forward) {
+        if (abs_velocity < static_cast<uint32_t>(FORWARD_VELOCITY_THRESHOLD)) {
+            // Linearly increase from STALL_PWM_MAX to PWM_WRAP
+            uint32_t range = PWM_WRAP - STALL_PWM_MAX;
+            max_allowed_pwm = STALL_PWM_MAX + ((abs_velocity * range) / FORWARD_VELOCITY_THRESHOLD);
+        } else {
+            max_allowed_pwm = PWM_WRAP;
+        }
+    } else {
+        // Moving backwards (user fighting the motor)
+        if (abs_velocity < static_cast<uint32_t>(BACKWARDS_VELOCITY_THRESHOLD)) {
+            // Linearly decrease from STALL_PWM_MAX to BACKWARDS_PWM_MAX
+            uint32_t range = STALL_PWM_MAX - BACKWARDS_PWM_MAX;
+            max_allowed_pwm = STALL_PWM_MAX - ((abs_velocity * range) / BACKWARDS_VELOCITY_THRESHOLD);
+        } else {
+            max_allowed_pwm = BACKWARDS_PWM_MAX;
+        }
     }
 
     if (pwm > max_allowed_pwm) {
         pwm = max_allowed_pwm;
     }
 
-    apply_pwm(pwm, direction);
+    apply_pwm(pwm, dir);
 }
 
 void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
-    if (dir != current_direction_) {
+    bool dir_changed = (dir != current_direction_);
+
+    if (pwm == 0 || dir == Direction::OFF) {
+        pwm_set_gpio_level(PIN_PWM_LPWM, 0);
+        pwm_set_gpio_level(PIN_PWM_RPWM, 0);
+        gpio_put(PIN_PWM_EN, 0);
+        current_direction_ = Direction::OFF;
+        return;
+    }
+
+    if (dir_changed) {
         // ---- Dead-Time Insertion ----
         // Before changing direction, turn both off and wait to prevent shoot-through
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, 0);
         
-        // Disable EN during dead-time
-        gpio_put(PIN_PWM_EN, 0);
-
-        // Blocking wait (50us is very short, acceptable in 1ms loop)
+        // Block tightly for DEAD_TIME_US (typically 50us)
         busy_wait_us_32(DEAD_TIME_US);
-
+        
         current_direction_ = dir;
     }
 
-    if (dir == Direction::OFF || pwm == 0) {
-        pwm_set_gpio_level(PIN_PWM_LPWM, 0);
-        pwm_set_gpio_level(PIN_PWM_RPWM, 0);
-        gpio_put(PIN_PWM_EN, 0);
-    } else if (dir == Direction::CW) {
-        pwm_set_gpio_level(PIN_PWM_RPWM, 0);
+    // Apply new duty cycle
+    if (dir == Direction::CW) {
         pwm_set_gpio_level(PIN_PWM_LPWM, pwm);
-        gpio_put(PIN_PWM_EN, 1);
-    } else if (dir == Direction::CCW) {
+        pwm_set_gpio_level(PIN_PWM_RPWM, 0);
+    } else {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, pwm);
-        gpio_put(PIN_PWM_EN, 1);
     }
+    gpio_put(PIN_PWM_EN, 1);
 }

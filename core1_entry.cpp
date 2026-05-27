@@ -64,7 +64,7 @@ static void dma_isr() {
 
     if (!valid) {
         // Hardware error (magnet missing/bad)
-        g_motor.emergency_stop();
+        g_motor.stop();
         // Determine exact error for LED status
         uint8_t err = g_parser.get_error_flags();
         if (err & SensorState::ERR_MAGNET_MISSING) {
@@ -90,7 +90,7 @@ static void dma_isr() {
     spin_unlock(g_state->ffb.lock, irq_status);
 
     // 3. Motor Control
-    g_motor.set_target(out.pwm, out.direction, g_parser.get_velocity());
+    g_motor.set_force(out.force, g_parser.get_velocity());
 }
 
 // =========================================================================
@@ -165,7 +165,7 @@ void core1_main() {
         uint64_t now = time_us_64();
         if (now - g_last_loop_time_us > I2C_WATCHDOG_TIMEOUT_US) {
             // Watchdog fired! Loop stalled.
-            g_motor.emergency_stop();
+            g_motor.stop();
             g_state->led_status.set(SystemStatus::I2CWatchdogFired);
         } else {
             g_state->led_status.clear(SystemStatus::I2CWatchdogFired);

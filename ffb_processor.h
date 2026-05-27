@@ -4,8 +4,7 @@
 #include "shared_state.h"
 
 struct FFBOutput {
-    int16_t  pwm;         // Signed: positive = CW, negative = CCW
-    Direction direction;
+    int32_t force;
 };
 
 class FFBProcessor {
@@ -35,5 +34,5 @@ private:
     static int32_t int_sin(uint32_t angle_centideg);
 
     // Look up expected speed for a given PWM from calibration LUTs
-    int32_t lookup_expected_speed(uint16_t pwm, Direction dir) const;
+    int32_t lookup_expected_speed(int32_t force) const;
 };

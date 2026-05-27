@@ -54,8 +54,7 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
                                   const EffectState& effects) {
     FFBOutput out;
-    out.pwm = 0;
-    out.direction = Direction::OFF;
+    out.force = 0;
 
     // ---- Electronic End-Stop (Early Exit) ----
     // If wheel is beyond physical limit, apply a proportional reverse spring
@@ -65,19 +64,12 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
             ? (position - MAX_HALF_ANGLE_COUNTS)
             : (position + MAX_HALF_ANGLE_COUNTS);
 
-        // Proportional spring: force = -overshoot scaled to PWM range
-        // Cap at PWM_WRAP
-        int32_t force = (-overshoot * PWM_WRAP) / MAX_HALF_ANGLE_COUNTS;
-        if (force > PWM_WRAP) force = PWM_WRAP;
-        if (force < -static_cast<int32_t>(PWM_WRAP)) force = -static_cast<int32_t>(PWM_WRAP);
+        // Proportional spring: force = -overshoot scaled to 10000 range
+        int32_t force = (-overshoot * 10000) / MAX_HALF_ANGLE_COUNTS;
+        if (force > 10000) force = 10000;
+        if (force < -10000) force = -10000;
 
-        if (force > 0) {
-            out.pwm = static_cast<int16_t>(force);
-            out.direction = Direction::CW;
-        } else if (force < 0) {
-            out.pwm = static_cast<int16_t>(-force);
-            out.direction = Direction::CCW;
-        }
+        out.force = force;
         return out;
     }
 
@@ -172,19 +164,8 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     if (total_force > 10000) total_force = 10000;
     if (total_force < -10000) total_force = -10000;
 
-    // Scale from -10000..+10000 to -PWM_WRAP..+PWM_WRAP
-    int32_t pwm = (total_force * PWM_WRAP) / 10000;
-
-    if (pwm > 0) {
-        out.pwm = static_cast<int16_t>(pwm);
-        out.direction = Direction::CW;
-    } else if (pwm < 0) {
-        out.pwm = static_cast<int16_t>(-pwm);
-        out.direction = Direction::CCW;
-    } else {
-        out.pwm = 0;
-        out.direction = Direction::OFF;
-    }
+    // Return unscaled output force
+    out.force = total_force;
 
     return out;
 }
@@ -331,22 +312,24 @@ int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,
     return force;  // Sustain phase
 }
 
-int32_t FFBProcessor::lookup_expected_speed(uint16_t pwm, Direction dir) const {
+int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
     if (!cal_luts_ || !cal_luts_->valid) return 0;
 
-    const int32_t* lut = (dir == Direction::CW) ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
+    bool is_cw = force > 0;
+    int32_t abs_force = is_cw ? force : -force;
+    const int32_t* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
 
-    // Find the two bracketing PWM levels and interpolate
-    for (uint8_t i = 0; i < CAL_PWM_LEVEL_COUNT; i++) {
-        if (pwm <= CAL_PWM_LEVELS[i]) {
-            if (i == 0) return (static_cast<int32_t>(pwm) * lut[0]) / CAL_PWM_LEVELS[0];
+    // Find the two bracketing force levels and interpolate
+    for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+        if (abs_force <= CAL_FORCE_LEVELS[i]) {
+            if (i == 0) return (abs_force * lut[0]) / CAL_FORCE_LEVELS[0];
             // Linear interpolation between lut[i-1] and lut[i]
-            int32_t pwm_low  = CAL_PWM_LEVELS[i - 1];
-            int32_t pwm_high = CAL_PWM_LEVELS[i];
+            int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
+            int32_t force_high = CAL_FORCE_LEVELS[i];
             int32_t spd_low  = lut[i - 1];
             int32_t spd_high = lut[i];
-            return spd_low + ((spd_high - spd_low) * (pwm - pwm_low)) / (pwm_high - pwm_low);
+            return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
         }
     }
-    return lut[CAL_PWM_LEVEL_COUNT - 1];
+    return lut[CAL_FORCE_LEVEL_COUNT - 1];
 }
