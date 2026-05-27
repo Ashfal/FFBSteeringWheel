@@ -118,7 +118,7 @@ void core1_hw_init() {
     g_motor.init();
 }
 
-void core1_start_loop() {
+void core1_init_interrupts() {
     // Enable DMA interrupt on Core 1
     irq_set_exclusive_handler(DMA_IRQ_0, dma_isr);
     irq_set_enabled(DMA_IRQ_0, true);
@@ -156,7 +156,7 @@ void core1_main() {
     // Apply friction compensation from LUTs
     g_motor.set_calibration_zero(g_state->cal_luts.cw_zero_pwm, g_state->cal_luts.ccw_zero_pwm);
 
-    core1_start_loop();
+    core1_init_interrupts();
 
     g_last_loop_time_us = time_us_64();
 
@@ -178,10 +178,18 @@ void core1_main() {
                 g_state->led_status.set(SystemStatus::I2CWatchdogFired);
                 in_error_state = true;
             }
+
+            // Cancel the 1ms alarm to prevent start_read() firing mid-reset
+            alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+
             // Aggressively attempt to reset the I2C bus and un-stick the slave
             g_i2c.reset_bus();
+
+            // Re-arm the 1ms alarm now that the bus is reinitialized
+            g_timer_alarm = alarm_pool_add_alarm_in_us(
+                g_alarm_pool, I2C_READ_INTERVAL_US, timer_callback, nullptr, true);
             
-            // Wait a moment before the next 1ms alarm timer tries to start_read() again
+            // Wait a moment for the next alarm to fire and attempt a read
             sleep_ms(5);
         } else {
             if (in_error_state) {

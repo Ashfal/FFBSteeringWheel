@@ -143,7 +143,7 @@ struct SharedState {
     // Button state (Core 0 only writes, Core 0 only reads for USB)
     std::atomic<uint16_t> buttons{0};
 
-    // Pedal values (Core 0 only, 12-bit ADC scaled to 16-bit for USB)
-    std::atomic<uint16_t> pedal_accel{0};
-    std::atomic<uint16_t> pedal_brake{0};
+    // Pedal values (Core 0 only, signed 16-bit for USB HID report)
+    std::atomic<int16_t> pedal_accel{-32767};
+    std::atomic<int16_t> pedal_brake{-32767};
 };
