@@ -34,20 +34,20 @@ void I2CDMA::init() {
     tx_cmd_buf_[3] = I2C_CMD_STOP | I2C_CMD_READ;                        // Read byte 3 (Angle Low) and Stop
 
     // Configure TX DMA (writes commands to DATA_CMD)
-    dma_channel_config tx_cfg = dma_channel_get_default_config(dma_tx_chan_);
-    channel_config_set_transfer_data_size(&tx_cfg, DMA_SIZE_16);
-    channel_config_set_dreq(&tx_cfg, i2c_get_dreq(i2c0, true));
-    channel_config_set_read_increment(&tx_cfg, true);
-    channel_config_set_write_increment(&tx_cfg, false);
+    tx_cfg_ = dma_channel_get_default_config(dma_tx_chan_);
+    channel_config_set_transfer_data_size(&tx_cfg_, DMA_SIZE_16);
+    channel_config_set_dreq(&tx_cfg_, i2c_get_dreq(i2c0, true));
+    channel_config_set_read_increment(&tx_cfg_, true);
+    channel_config_set_write_increment(&tx_cfg_, false);
 
     // Configure RX DMA (reads data from DATA_CMD)
     // We only want to capture the 3 read bytes. The first command is a write, 
     // which doesn't produce RX data. 
-    dma_channel_config rx_cfg = dma_channel_get_default_config(dma_rx_chan_);
-    channel_config_set_transfer_data_size(&rx_cfg, DMA_SIZE_8); // We only care about the lower 8 bits
-    channel_config_set_dreq(&rx_cfg, i2c_get_dreq(i2c0, false));
-    channel_config_set_read_increment(&rx_cfg, false);
-    channel_config_set_write_increment(&rx_cfg, true);
+    rx_cfg_ = dma_channel_get_default_config(dma_rx_chan_);
+    channel_config_set_transfer_data_size(&rx_cfg_, DMA_SIZE_8); // We only care about the lower 8 bits
+    channel_config_set_dreq(&rx_cfg_, i2c_get_dreq(i2c0, false));
+    channel_config_set_read_increment(&rx_cfg_, false);
+    channel_config_set_write_increment(&rx_cfg_, true);
 
     // Don't start yet
 }
@@ -65,15 +65,13 @@ void I2CDMA::start_read() {
         (void)i2c_get_hw(i2c0)->data_cmd;
     }
 
-    dma_channel_config rx_cfg = dma_channel_get_default_config(dma_rx_chan_);
-    dma_channel_configure(dma_rx_chan_, &rx_cfg,
+    dma_channel_configure(dma_rx_chan_, &rx_cfg_,
                           rx_buf_,                        // dest
                           &i2c_get_hw(i2c0)->data_cmd,    // src
                           3,                              // read 3 bytes
                           false);
 
-    dma_channel_config tx_cfg = dma_channel_get_default_config(dma_tx_chan_);
-    dma_channel_configure(dma_tx_chan_, &tx_cfg,
+    dma_channel_configure(dma_tx_chan_, &tx_cfg_,
                           &i2c_get_hw(i2c0)->data_cmd,    // dest
                           tx_cmd_buf_,                    // src
                           4,                              // 4 commands total
@@ -92,4 +90,48 @@ bool I2CDMA::handle_isr() {
         return true;
     }
     return false;
+}
+
+void I2CDMA::reset_bus() {
+    // 1. Abort any hanging DMA
+    dma_channel_abort(dma_tx_chan_);
+    dma_channel_abort(dma_rx_chan_);
+
+    // 2. Disable I2C peripheral to take manual control of pins
+    i2c_deinit(i2c0);
+
+    // 3. Configure pins as raw GPIO outputs to bit-bang a recovery
+    gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_SIO);
+    gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_SIO);
+    gpio_set_dir(PIN_I2C_SCL, GPIO_OUT);
+    gpio_set_dir(PIN_I2C_SDA, GPIO_IN);
+    gpio_pull_up(PIN_I2C_SDA); // Need pull up to read it
+
+    // 4. Toggle SCL up to 9 times to force the stuck slave to release SDA
+    for (int i = 0; i < 9; i++) {
+        // If SDA goes high, the bus is free!
+        if (gpio_get(PIN_I2C_SDA)) {
+            break;
+        }
+        gpio_put(PIN_I2C_SCL, 0);
+        sleep_us(5);
+        gpio_put(PIN_I2C_SCL, 1);
+        sleep_us(5);
+    }
+
+    // 5. Generate a hardware STOP condition (SDA low to high while SCL is high)
+    gpio_set_dir(PIN_I2C_SDA, GPIO_OUT);
+    gpio_put(PIN_I2C_SDA, 0);
+    sleep_us(5);
+    gpio_put(PIN_I2C_SCL, 1);
+    sleep_us(5);
+    gpio_put(PIN_I2C_SDA, 1);
+    sleep_us(5);
+
+    // 6. Re-initialize I2C peripheral to let the hardware take back control
+    i2c_init(i2c0, I2C_FREQ_HZ);
+    gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
+    gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
+    gpio_pull_up(PIN_I2C_SDA);
+    gpio_pull_up(PIN_I2C_SCL);
 }

@@ -6,13 +6,14 @@
 // Priority: highest SystemStatus enum value wins.
 // =========================================================================
 
+#include <atomic>
 #include "led_controller.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
 // External access to the shared LED status
 // (linked from main.cpp's SharedState)
-extern uint8_t volatile* g_led_status_ptr;
+extern std::atomic<uint8_t>* g_led_status_ptr;
 
 void LEDController::init() {
     gpio_init(PIN_LED);
@@ -25,7 +26,7 @@ void LEDController::update() {
     // Read current status code from the atomic
     uint8_t code = 0;
     if (g_led_status_ptr) {
-        code = *g_led_status_ptr;
+        code = g_led_status_ptr->load();
     }
 
     uint64_t now = time_us_64();
@@ -96,4 +97,4 @@ void LEDController::update() {
 }
 
 // Global pointer — set by main.cpp
-uint8_t volatile* g_led_status_ptr = nullptr;
+std::atomic<uint8_t>* g_led_status_ptr = nullptr;

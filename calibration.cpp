@@ -63,7 +63,7 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
 
 // Sweep at a constant force and find maximum stable speed
 static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser) {
-    motor.stop();
+    motor.set_force(force, 0);
     
     bool is_cw = force > 0;
     

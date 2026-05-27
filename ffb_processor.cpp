@@ -1,7 +1,7 @@
 // =========================================================================
 // FFB Processor — Force Feedback Effect Calculation Engine
 // =========================================================================
-// Processes all active effects and returns a combined PWM + direction.
+// Processes all active effects and returns a combined integer force.
 // All calculations use integer math only — no floats.
 // Force range: -10000 to +10000 (matches PID spec normalized range).
 // =========================================================================
@@ -300,7 +300,8 @@ int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,
     }
 
     if (duration != 0xFFFF && duration != 0x7FFF &&
-        elapsed_ms > (duration - fade_time) && fade_time > 0) {
+        fade_time > 0 && duration > fade_time &&
+        elapsed_ms > (duration - fade_time)) {
         // Fade phase: ramp from magnitude to fade_level
         uint32_t fade_elapsed = elapsed_ms - (duration - fade_time);
         int32_t level = magnitude -

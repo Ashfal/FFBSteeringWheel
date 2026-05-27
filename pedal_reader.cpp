@@ -82,15 +82,16 @@ uint16_t PedalReader::median_filter(uint16_t history[3]) {
     return b;  // Median
 }
 
-uint16_t PedalReader::scale_to_16bit(uint16_t raw, uint16_t cal_min, uint16_t cal_max) {
-    if (cal_max <= cal_min) return 0;
+int16_t PedalReader::scale_to_16bit(uint16_t raw, uint16_t cal_min, uint16_t cal_max) {
+    if (cal_max <= cal_min) return -32767;
 
     // Clamp to calibrated range
     if (raw < cal_min) raw = cal_min;
     if (raw > cal_max) raw = cal_max;
 
-    // Scale 0..65535 (16-bit unsigned range for HID)
-    // Using 32-bit arithmetic to avoid overflow
-    uint32_t scaled = (static_cast<uint32_t>(raw - cal_min) * 65535) / (cal_max - cal_min);
-    return static_cast<uint16_t>(scaled);
+    // Scale 0..(cal_max-cal_min) to -32767..+32767
+    uint32_t range = cal_max - cal_min;
+    uint32_t val = raw - cal_min;
+    int32_t scaled = -32767 + (static_cast<int32_t>(val) * 65534) / range;
+    return static_cast<int16_t>(scaled);
 }

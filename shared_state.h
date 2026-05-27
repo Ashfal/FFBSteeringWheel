@@ -81,8 +81,8 @@ struct EffectState {
 // =========================================================================
 
 struct CalibrationLUTs {
-    // Speed LUT: expected maximum raw velocity at each PWM level
-    // Index corresponds to CAL_PWM_LEVELS[]
+    // Speed LUT: expected maximum raw velocity at each force level
+    // Index corresponds to CAL_FORCE_LEVELS[]
     int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
     int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
 
@@ -104,8 +104,10 @@ struct StatusState {
         uint8_t val = static_cast<uint8_t>(s);
         // Only upgrade priority (higher numeric = higher priority)
         uint8_t current = status.load();
-        if (val > current) {
-            status.store(val);
+        while (val > current) {
+            if (status.compare_exchange_weak(current, val)) {
+                break;
+            }
         }
     }
 

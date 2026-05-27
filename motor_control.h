@@ -24,9 +24,8 @@ public:
     // Set raw PWM for calibration, with stall governor logic
     void set_pwm(uint16_t pwm, Direction dir, int32_t velocity);
 
-    // Immediate emergency stop
+    // Immediate stop
     void stop();
-    void emergency_stop();
 
 private:
     uint16_t cw_zero_pwm_ = 0;

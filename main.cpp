@@ -7,6 +7,7 @@
 // =========================================================================
 
 #include <stdio.h>
+#include <atomic>
 #include "pico/stdlib.h"
 #include "pico/multicore.h"
 #include "bsp/board_api.h"
@@ -27,7 +28,7 @@
 SharedState g_shared_state;
 
 // Link LED status to the global controller pointer
-extern volatile uint8_t* g_led_status_ptr;
+extern std::atomic<uint8_t>* g_led_status_ptr;
 
 static ButtonReader g_buttons;
 static PedalReader  g_pedals;
@@ -114,7 +115,7 @@ int main() {
     stdio_init_all();
 
     // Link LED status
-    g_led_status_ptr = reinterpret_cast<volatile uint8_t*>(&g_shared_state.led_status.status);
+    g_led_status_ptr = &g_shared_state.led_status.status;
 
     g_led.init();
     g_buttons.init();
@@ -150,21 +151,21 @@ int main() {
         g_shared_state.led_status.set(SystemStatus::ReadyForCal);
         
         bool long_press = false;
-        uint32_t press_time = 0;
+        uint64_t press_time_us = 0;
 
         while (true) {
             g_buttons.update();
             g_led.update();
 
             if (g_buttons.get_buttons() != 0) {
-                if (press_time == 0) {
-                    press_time = time_us_32() / 1000;
-                } else if ((time_us_32() / 1000) - press_time > LONG_PRESS_MS) {
+                if (press_time_us == 0) {
+                    press_time_us = time_us_64();
+                } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
                     long_press = true;
                     break;
                 }
             } else {
-                if (press_time > 0) {
+                if (press_time_us > 0) {
                     // Short press released
                     break;
                 }
@@ -192,7 +193,7 @@ int main() {
     // Init TinyUSB
     tusb_init();
 
-    uint32_t last_usb_report_time = 0;
+    uint64_t last_usb_report_time_us = 0;
 
     // Main Loop
     while (true) {
@@ -210,10 +211,10 @@ int main() {
         g_shared_state.pedal_brake.store(g_pedals.get_brake());
 
         // Send joystick report at 100Hz (10ms)
-        uint32_t now = time_us_32() / 1000;
-        if (now - last_usb_report_time >= 10) {
+        uint64_t now_us = time_us_64();
+        if (now_us - last_usb_report_time_us >= 10000) {
             usb_hid_send_input_report(g_shared_state);
-            last_usb_report_time = now;
+            last_usb_report_time_us = now_us;
         }
 
         sleep_us(500); // Prevent pegging Core 0 100%

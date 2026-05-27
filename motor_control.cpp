@@ -48,11 +48,6 @@ void MotorControl::stop() {
     apply_pwm(0, Direction::OFF);
 }
 
-void MotorControl::emergency_stop() {
-    stop();
-    gpio_put(PIN_PWM_EN, 0);
-}
-
 void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     cw_zero_pwm_ = cw_zero;
     ccw_zero_pwm_ = ccw_zero;

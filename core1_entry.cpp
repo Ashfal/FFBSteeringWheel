@@ -109,14 +109,16 @@ static int64_t timer_callback(alarm_id_t id, void *user_data) {
 // =========================================================================
 // Core 1 Initialization
 // =========================================================================
-void core1_init() {
+void core1_hw_init() {
     g_i2c.init();
     g_parser.init();
     
     // Apply flash calibration center
     g_parser.set_center(g_state->center_offset.load());
     g_motor.init();
+}
 
+void core1_start_loop() {
     // Enable DMA interrupt on Core 1
     irq_set_exclusive_handler(DMA_IRQ_0, dma_isr);
     irq_set_enabled(DMA_IRQ_0, true);
@@ -130,6 +132,8 @@ void core1_init() {
 // =========================================================================
 void core1_main() {
     if (!g_state) return;
+
+    core1_hw_init();
 
     g_ffb.init(&g_state->cal_luts);
 
@@ -152,6 +156,8 @@ void core1_main() {
     // Apply friction compensation from LUTs
     g_motor.set_calibration_zero(g_state->cal_luts.cw_zero_pwm, g_state->cal_luts.ccw_zero_pwm);
 
+    core1_start_loop();
+
     g_last_loop_time_us = time_us_64();
 
     // Start the 1ms repeating alarm
@@ -161,14 +167,28 @@ void core1_main() {
     g_i2c.start_read();
 
     // Background Watchdog Loop
+    bool in_error_state = false;
     while (true) {
         uint64_t now = time_us_64();
         if (now - g_last_loop_time_us > I2C_WATCHDOG_TIMEOUT_US) {
             // Watchdog fired! Loop stalled.
-            g_motor.stop();
-            g_state->led_status.set(SystemStatus::I2CWatchdogFired);
+            if (!in_error_state) {
+                // Only stop the motor and set the LED on the initial fault detection
+                g_motor.stop();
+                g_state->led_status.set(SystemStatus::I2CWatchdogFired);
+                in_error_state = true;
+            }
+            // Aggressively attempt to reset the I2C bus and un-stick the slave
+            g_i2c.reset_bus();
+            
+            // Wait a moment before the next 1ms alarm timer tries to start_read() again
+            sleep_ms(5);
         } else {
-            g_state->led_status.clear(SystemStatus::I2CWatchdogFired);
+            if (in_error_state) {
+                // We successfully recovered! The 1ms timer fired and ISR completed.
+                g_state->led_status.clear(SystemStatus::I2CWatchdogFired);
+                in_error_state = false;
+            }
         }
 
         // Just yield and let interrupts do the work

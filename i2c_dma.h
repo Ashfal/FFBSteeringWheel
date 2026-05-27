@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "hardware/dma.h"
 
 class I2CDMA {
 public:
@@ -12,6 +13,9 @@ public:
     // Returns true if a full read was completed successfully
     bool handle_isr();
 
+    // Aggressively attempt to clear a stuck I2C bus and reset the peripheral
+    void reset_bus();
+
     // Get the latest read data
     // data[0] = Status Register
     // data[1] = Raw Angle High
@@ -21,6 +25,9 @@ public:
 private:
     int dma_tx_chan_ = -1;
     int dma_rx_chan_ = -1;
+
+    dma_channel_config tx_cfg_;
+    dma_channel_config rx_cfg_;
 
     // Buffer to hold the I2C DATA_CMD register writes
     // 0: Write register address (0x0B)
