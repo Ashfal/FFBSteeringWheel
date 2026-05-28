@@ -92,7 +92,7 @@ constexpr int32_t  MAX_PHYSICAL_VELOCITY  = 2000;
 // BUTTON READING (SPI)
 // =========================================================================
 
-constexpr uint32_t SPI_FREQ_HZ           = 200000;  // 200 kHz
+constexpr uint32_t SPI_FREQ_HZ           = 100000;  // 100 kHz (Matches I2C for better motor noise immunity)
 constexpr uint8_t  BUTTON_COUNT          = 16;       // 2x HCF4021B = 16 bits
 constexpr uint8_t  DEBOUNCE_READS        = 3;        // Rolling buffer depth
 

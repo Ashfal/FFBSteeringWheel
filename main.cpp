@@ -194,30 +194,39 @@ int main() {
     tusb_init();
 
     uint64_t last_usb_report_time_us = 0;
+    uint64_t last_input_read_time_us = 0;
 
     // Main Loop
     while (true) {
-        // TinyUSB task (handles SET_REPORT internally)
+        // TinyUSB task (handles incoming FFB packets and USB control)
+        // This must run frequently, ideally >1000Hz (every <1ms)
         tud_task();
 
-        // Read inputs
-        g_buttons.update();
-        g_pedals.update();
-        g_led.update();
+        uint64_t now_us = time_us_64();
 
-        // Store to shared state
-        g_shared_state.buttons.store(g_buttons.get_buttons());
-        g_shared_state.pedal_accel.store(g_pedals.get_accel());
-        g_shared_state.pedal_brake.store(g_pedals.get_brake());
+        // Read inputs at 400Hz (every 2.5ms)
+        // Gives a perfect 7.5ms debounce window for buttons and pedals
+        if (now_us - last_input_read_time_us >= 2500) {
+            g_buttons.update();
+            g_pedals.update();
+            g_led.update();
+
+            // Store to shared state
+            g_shared_state.buttons.store(g_buttons.get_buttons());
+            g_shared_state.pedal_accel.store(g_pedals.get_accel());
+            g_shared_state.pedal_brake.store(g_pedals.get_brake());
+
+            last_input_read_time_us = now_us;
+        }
 
         // Send joystick report at 100Hz (10ms)
-        uint64_t now_us = time_us_64();
         if (now_us - last_usb_report_time_us >= 10000) {
             usb_hid_send_input_report(g_shared_state);
             last_usb_report_time_us = now_us;
         }
 
-        sleep_us(500); // Prevent pegging Core 0 100%
+        // Prevent pegging Core 0, but keep loop fast enough for USB 1000Hz polling
+        sleep_us(250);
     }
 
     return 0;

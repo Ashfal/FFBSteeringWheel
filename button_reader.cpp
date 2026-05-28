@@ -79,9 +79,13 @@ void ButtonReader::update() {
     if (!dma_active_) {
         // 1. Latch: pulse HIGH then LOW to capture parallel button states
         gpio_put(PIN_SPI_LATCH, 1);
-        // Brief delay — HCF4021 needs ~100ns, busy_wait gives us at least 1µs
+        // Brief delay for parallel load (tW).
+        // At 3.3V, HCF4021B can need up to ~500ns to settle. 1us is safe.
         busy_wait_us_32(1);
         gpio_put(PIN_SPI_LATCH, 0);
+
+        // Brief delay for setup time (tSU) before the first clock edge.
+        busy_wait_us_32(1);
 
         // 2. Restart DMA channels
         dma_channel_set_read_addr(dma_rx_chan_, &spi_get_hw(spi0)->dr, false);
