@@ -63,10 +63,11 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 
 // Stall protection governor:
 // Differentiates between moving forward (with the motor) and backwards (against the motor).
-constexpr uint16_t STALL_PWM_MAX                = 1250;
-constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 200;  // Raw counts/ms
-constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 200;  // Raw counts/ms
-constexpr uint16_t BACKWARDS_PWM_MAX            = 500;
+// Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
+constexpr uint16_t STALL_PWM_MAX                = 2291; // ~36% duty cycle
+constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
+constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
+constexpr uint16_t BACKWARDS_PWM_MAX            = 604;  // ~9.6% duty cycle
 
 // =========================================================================
 // AS5600 SENSOR
