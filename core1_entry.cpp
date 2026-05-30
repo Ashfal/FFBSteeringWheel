@@ -91,11 +91,9 @@ static void dma_isr() {
     g_state->led_status.clear(SystemStatus::MagnetLow);
 
     // 2. FFB Processing
-    uint32_t irq_status = spin_lock_blocking(g_state->ffb.lock);
     FFBOutput out = g_ffb.calculate(g_parser.get_position(),
                                     g_parser.get_velocity(),
                                     g_state->ffb);
-    spin_unlock(g_state->ffb.lock, irq_status);
 
     // 3. Motor Control
     g_motor.set_force(out.force, g_parser.get_velocity());

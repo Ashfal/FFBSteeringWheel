@@ -25,7 +25,7 @@ public:
     void set_pwm(uint16_t pwm, Direction dir, int32_t velocity);
 
     // Immediate stop (coast)
-    void stop();
+    void stop() { apply_pwm(0, Direction::OFF); }
 
     // Active stop (short terminals)
     void brake();

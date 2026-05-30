@@ -52,7 +52,7 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 // =========================================================================
 
 FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
-                                  const EffectState& effects) {
+                                  EffectState& effects) {
     FFBOutput out;
     out.force = 0;
 
@@ -86,7 +86,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     uint32_t irq = spin_lock_blocking(effects.lock);
 
     for (uint8_t i = 0; i < MAX_EFFECTS; i++) {
-        const EffectSlot& e = effects.effects[i];
+        EffectSlot& e = effects.effects[i];
         if (e.state != EffectSlot::STATE_PLAYING) continue;
 
         // Calculate elapsed time in ms
@@ -96,6 +96,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         uint16_t duration = e.params.duration;
         if (duration != 0xFFFF && duration != 0x7FFF && elapsed_ms > duration) {
             // Effect has expired
+            e.state = EffectSlot::STATE_ALLOCATED;
             continue;
         }
 
@@ -103,6 +104,9 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         uint32_t dir_angle = static_cast<uint32_t>(e.params.directionX) * 36000 / 255;
         int32_t angle_ratio = int_sin(dir_angle);
         int32_t force = 0;
+
+        int32_t scaled_pos = (position * 10000) / MAX_HALF_ANGLE_COUNTS;
+        int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY;
 
         switch (e.params.effectType) {
             case 1: force = calc_constant_force(e); break;              // Constant Force
@@ -112,16 +116,16 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
             case 5:                                                     // Triangle
             case 6:                                                     // Sawtooth Up
             case 7: force = calc_periodic_force(e, elapsed_ms); break;  // Sawtooth Down
-            case 8: force = calc_condition_force(e, position, 0); break;// Spring (Position)
+            case 8: force = calc_condition_force(e, scaled_pos, 0); break;// Spring (Position)
             case 9: {                                                   // Damper (Velocity)
-                int32_t coeff_percent = calc_condition_force(e, velocity, 0); 
+                int32_t coeff_percent = calc_condition_force(e, scaled_vel, 0); 
                 int32_t req_force = lookup_required_force(velocity);
                 force = (coeff_percent * req_force) / 10000;
                 break;
             }
             case 10: force = 0; break;                                  // Inertia (Unsupported)
             case 11: {                                                  // Friction (Velocity)
-                int32_t coeff_percent = calc_condition_force(e, velocity, 0);
+                int32_t coeff_percent = calc_condition_force(e, scaled_vel, 0);
                 int32_t req_force = lookup_required_force(velocity);
                 force = (coeff_percent * req_force) / 10000;
                 break;

@@ -105,6 +105,9 @@ static int8_t allocate_effect_slot() {
 // SET_REPORT Callback — Output & Feature reports from host
 // =========================================================================
 
+// Store the last allocated slot persistently across calls between SET and GET
+static int8_t last_allocated_slot = -1;
+
 void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
                            hid_report_type_t report_type,
                            uint8_t const* buffer, uint16_t bufsize) {
@@ -345,9 +348,8 @@ void tud_hid_set_report_cb(uint8_t instance, uint8_t report_id,
         // -----------------------------------------------------------------
         case REPORT_ID_FEATURE_CREATE_NEW_EFFECT: {
             // Host wants to create a new effect. Allocate a slot.
-            // Response is sent via GET_REPORT for PID Block Load (Report ID 6).
-            // We just allocate here and the GET_REPORT callback returns the result.
-            // Nothing to parse from the incoming data beyond the effect type.
+            // DirectInput/Linux will query this slot later via GET_REPORT.
+            last_allocated_slot = allocate_effect_slot();
             break;
         }
 
@@ -375,19 +377,12 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
         // Host is creating a new effect — we allocate a slot.
         // -----------------------------------------------------------------
         case REPORT_ID_FEATURE_CREATE_NEW_EFFECT: {
-            // Allocate a new effect slot
-            int8_t slot = allocate_effect_slot();
-
-            // We respond via PID Block Load in the next GET_REPORT for ID 6,
-            // but some drivers expect the Create New Effect response to include
-            // the block index. Store it for the Block Load response.
-            // For now, use a static to pass between the two calls.
-            static int8_t last_allocated_slot = -1;
-            last_allocated_slot = slot;
-
             USB_FFBReport_CreateNewEffect_Feature_Data_t response;
             response.reportId = report_id;
             response.effectType = 0;  // Echo back
+            
+            // byteCount = size of the parameter block. We report device-managed pool
+            // with unlimited RAM, so this is always 0.
             response.byteCount = 0;
 
             uint16_t len = sizeof(response) - 1;  // Exclude reportId
@@ -400,16 +395,8 @@ uint16_t tud_hid_get_report_cb(uint8_t instance, uint8_t report_id,
         // PID Block Load Feature Report (Report ID 6)
         // -----------------------------------------------------------------
         case REPORT_ID_FEATURE_PID_BLOCK_LOAD: {
-            // Find the most recently allocated slot
-            int8_t slot = -1;
-            uint32_t irq = spin_lock_blocking(g_state->ffb.lock);
-            for (int i = MAX_EFFECTS - 1; i >= 0; i--) {
-                if (g_state->ffb.effects[i].state == EffectSlot::STATE_ALLOCATED) {
-                    slot = static_cast<int8_t>(i);
-                    break;
-                }
-            }
-            spin_unlock(g_state->ffb.lock, irq);
+            // Return the most recently allocated slot
+            int8_t slot = last_allocated_slot;
 
             USB_FFBReport_PIDBlockLoad_Feature_Data_t response;
             response.reportId = report_id;

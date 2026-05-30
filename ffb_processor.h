@@ -16,7 +16,7 @@ public:
     // velocity: raw counts per ms (signed)
     // effects: snapshot of current effect state (caller holds spinlock)
     FFBOutput calculate(int32_t position, int32_t velocity,
-                        const EffectState& effects);
+                        EffectState& effects);
 
 private:
     const CalibrationLUTs* cal_luts_ = nullptr;

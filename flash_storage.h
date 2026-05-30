@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "config.h"
 
 struct FlashCalibrationData {
     uint32_t magic;             // Must be 0xFEEDFACE
@@ -13,8 +14,8 @@ struct FlashCalibrationData {
     // Motor Calibration LUTs
     uint16_t cw_zero_pwm;
     uint16_t ccw_zero_pwm;
-    int32_t  cw_speed[5];       // Note: Size matches CAL_FORCE_LEVEL_COUNT (5)
-    int32_t  ccw_speed[5];
+    int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
+    int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
     
     uint32_t crc32;             // Integrity check
 };

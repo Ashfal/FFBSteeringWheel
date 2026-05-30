@@ -34,7 +34,7 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
     block_read_sensor(i2c, parser);
     int32_t start_pos = parser.get_position();
 
-    while (test_pwm < PWM_WRAP) {
+    while (test_pwm < FORWARD_MAX_PWM) {
         test_pwm += 10;
         // Pass FORWARD_VELOCITY_THRESHOLD to bypass the stall governor here, 
         // since we actively NEED to exceed it to measure static friction.

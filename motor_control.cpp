@@ -44,15 +44,12 @@ void MotorControl::init() {
     current_direction_ = Direction::OFF;
 }
 
-void MotorControl::stop() {
-    apply_pwm(0, Direction::OFF);
-}
-
 void MotorControl::brake() {
     pwm_set_gpio_level(PIN_PWM_LPWM, 0);
     pwm_set_gpio_level(PIN_PWM_RPWM, 0);
     gpio_put(PIN_PWM_EN, 1);
-    current_direction_ = Direction::OFF;
+    // Note: Do not reset current_direction_ to OFF. This ensures we remember
+    // the last active direction so we can apply dead-time safely if it flips.
 }
 
 void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
@@ -96,17 +93,17 @@ uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
     bool is_stalled = (velocity == 0);
     uint32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
     
-    uint16_t max_allowed_pwm = PWM_WRAP;
+    uint16_t max_allowed_pwm = FORWARD_MAX_PWM;
     
     if (is_stalled) {
         max_allowed_pwm = STALL_PWM_MAX;
     } else if (is_forward) {
         if (abs_velocity < static_cast<uint32_t>(FORWARD_VELOCITY_THRESHOLD)) {
-            // Linearly increase from STALL_PWM_MAX to PWM_WRAP
-            uint32_t range = PWM_WRAP - STALL_PWM_MAX;
+            // Linearly increase from STALL_PWM_MAX to FORWARD_MAX_PWM
+            uint32_t range = FORWARD_MAX_PWM - STALL_PWM_MAX;
             max_allowed_pwm = STALL_PWM_MAX + ((abs_velocity * range) / FORWARD_VELOCITY_THRESHOLD);
         } else {
-            max_allowed_pwm = PWM_WRAP;
+            max_allowed_pwm = FORWARD_MAX_PWM;
         }
 
         // ---- Protection Envelope (Soft Speed Limiter) ----
@@ -137,7 +134,7 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
         return;
     }
 
-    if (pwm > PWM_WRAP) pwm = PWM_WRAP;
+    if (pwm > FORWARD_MAX_PWM) pwm = FORWARD_MAX_PWM;
 
     uint16_t max_allowed_pwm = get_safe_max_pwm(dir, velocity);
 
@@ -149,13 +146,16 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
 }
 
 void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
-    bool dir_changed = (dir != current_direction_);
+    // Only fire dead-time if we are changing to a DIFFERENT active direction.
+    // If current_direction_ is OFF (boot up), no dead-time is needed.
+    bool dir_changed = (dir != current_direction_ && current_direction_ != Direction::OFF);
 
     if (pwm == 0 || dir == Direction::OFF) {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, 0);
         gpio_put(PIN_PWM_EN, 0);
-        current_direction_ = Direction::OFF;
+        // Do NOT set current_direction_ = OFF. This remembers the last active direction
+        // so if the next non-zero force is in the opposite direction, dead-time fires correctly!
         return;
     }
 
@@ -167,9 +167,9 @@ void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
         
         // Block tightly for DEAD_TIME_US (typically 50us)
         busy_wait_us_32(DEAD_TIME_US);
-        
-        current_direction_ = dir;
     }
+    
+    current_direction_ = dir;
 
     // Apply new duty cycle
     if (dir == Direction::CW) {
