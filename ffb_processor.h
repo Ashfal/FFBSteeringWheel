@@ -35,4 +35,7 @@ private:
 
     // Look up expected speed for a given PWM from calibration LUTs
     int32_t lookup_expected_speed(int32_t force) const;
+    
+    // Look up required holding force for a given velocity from calibration LUTs
+    int32_t lookup_required_force(int32_t velocity) const;
 };

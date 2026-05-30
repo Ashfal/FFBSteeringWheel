@@ -105,17 +105,27 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         int32_t force = 0;
 
         switch (e.params.effectType) {
-            case 1: force = calc_constant_force(e); break;
-            case 2: force = calc_ramp_force(e, elapsed_ms); break;
-            case 3:
-            case 4:
-            case 5:
-            case 6:
-            case 7: force = calc_periodic_force(e, elapsed_ms); break;
-            case 8: force = calc_condition_force(e, position, 0); break;
-            case 9: force = calc_condition_force(e, velocity, 0); break;
-            case 10: force = 0; break;
-            case 11: force = calc_condition_force(e, velocity, 0); break;
+            case 1: force = calc_constant_force(e); break;              // Constant Force
+            case 2: force = calc_ramp_force(e, elapsed_ms); break;      // Ramp Force
+            case 3:                                                     // Square
+            case 4:                                                     // Sine
+            case 5:                                                     // Triangle
+            case 6:                                                     // Sawtooth Up
+            case 7: force = calc_periodic_force(e, elapsed_ms); break;  // Sawtooth Down
+            case 8: force = calc_condition_force(e, position, 0); break;// Spring (Position)
+            case 9: {                                                   // Damper (Velocity)
+                int32_t coeff_percent = calc_condition_force(e, velocity, 0); 
+                int32_t req_force = lookup_required_force(velocity);
+                force = (coeff_percent * req_force) / 10000;
+                break;
+            }
+            case 10: force = 0; break;                                  // Inertia (Unsupported)
+            case 11: {                                                  // Friction (Velocity)
+                int32_t coeff_percent = calc_condition_force(e, velocity, 0);
+                int32_t req_force = lookup_required_force(velocity);
+                force = (coeff_percent * req_force) / 10000;
+                break;
+            }
             default: break;
         }
 
@@ -324,5 +334,51 @@ int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
             return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
         }
     }
-    return lut[CAL_FORCE_LEVEL_COUNT - 1];
+    
+    // Force exceeds the calibrated table (e.g. > 3000), extrapolate using the last two points
+    int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
+    int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
+    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
+    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
+    
+    return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
+}
+
+int32_t FFBProcessor::lookup_required_force(int32_t velocity) const {
+    if (!cal_luts_ || !cal_luts_->valid) return 0;
+    if (velocity == 0) return 0;
+
+    bool is_cw = velocity > 0;
+    int32_t abs_vel = is_cw ? velocity : -velocity;
+    const int32_t* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
+
+    // Find the two bracketing speed levels and interpolate the required force
+    for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+        if (abs_vel <= lut[i]) {
+            if (i == 0) {
+                if (lut[0] == 0) return CAL_FORCE_LEVELS[0];
+                return (abs_vel * CAL_FORCE_LEVELS[0]) / lut[0];
+            }
+            // Linear interpolation between lut[i-1] and lut[i]
+            int32_t spd_low  = lut[i - 1];
+            int32_t spd_high = lut[i];
+            int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
+            int32_t force_high = CAL_FORCE_LEVELS[i];
+            
+            if (spd_high == spd_low) return force_high; // Prevent div by zero
+            return force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low);
+        }
+    }
+    
+    // Velocity exceeds the calibrated table, extrapolate using the last two points
+    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
+    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
+    int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
+    int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
+    
+    if (spd_high == spd_low) return force_high; // Fallback
+    
+    int32_t force = force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low);
+    if (force > 10000) force = 10000;
+    return force;
 }
