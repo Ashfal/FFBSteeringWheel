@@ -67,7 +67,7 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 constexpr uint16_t STALL_PWM_MAX                = 2291; // ~36% duty cycle
 constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
 constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
-constexpr uint16_t BACKWARDS_PWM_MAX            = 604;  // ~9.6% duty cycle
+constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 
 // =========================================================================
 // PROTECTION ENVELOPE (Speed Limiter)
@@ -93,9 +93,9 @@ constexpr uint8_t  AS5600_STATUS_MH      = 0x08;    // Magnet too strong
 constexpr uint8_t  AS5600_STATUS_ML      = 0x10;    // Magnet too weak
 constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 
-// Maximum physically possible velocity (raw counts per ms).
+// Maximum physically possible delta between reads (raw counts).
 // Any delta exceeding this is a sensor glitch and must be discarded.
-constexpr int32_t  MAX_PHYSICAL_VELOCITY  = 2000;
+constexpr int32_t  MAX_PHYSICAL_DELTA     = 200;
 
 // =========================================================================
 // BUTTON READING (SPI)
@@ -182,4 +182,6 @@ enum class SystemStatus : uint8_t {
     MagnetLow        = 8,   // AS5600: magnet too weak (ML=1)
     MagnetMissing    = 9,   // AS5600: no magnet detected (MD=0)
     I2CWatchdogFired = 10,  // I2C DMA watchdog expired — motor killed
+    EncoderDesync    = 11,  // Repeated impossible jumps — motor killed
+    DesyncAfterRecovery = 12, // Impossible jump on first read after watchdog recovery
 };

@@ -8,6 +8,7 @@
 // =========================================================================
 
 #include "as5600_parser.h"
+#include "shared_state.h"
 #include "pico/time.h"
 
 void AS5600Parser::init() {
@@ -81,30 +82,57 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
         wraps = 1;
     }
 
-    // ---- Velocity Calculation ----
     uint64_t dt_us = now - last_time_us_;
     if (dt_us == 0) dt_us = 1;  // Prevent division by zero
 
-    // velocity = delta counts per ms = (delta * 1000) / dt_us
-    int32_t new_velocity = (delta * 1000) / static_cast<int32_t>(dt_us);
+    bool is_recovery = (!first_read_ && dt_us > I2C_WATCHDOG_TIMEOUT_US);
 
-    // ---- Filter Impossible Physics Jumps ----
-    int32_t max_delta = (MAX_PHYSICAL_VELOCITY * static_cast<int32_t>(dt_us)) / 1000;
-
-    if (delta > max_delta || delta < -max_delta) {
-        // Impossible jump — do NOT update turn_count_ or last_raw_angle_
-        // Estimate position from last velocity
-        int32_t estimated_delta = (velocity_ * static_cast<int32_t>(dt_us)) / 1000;
-        accumulated_position_ += estimated_delta;
-        last_time_us_ = now; // Update time so dt_us doesn't grow arbitrarily large
+    if (is_recovery) {
+        if (delta > MAX_PHYSICAL_DELTA || delta < -MAX_PHYSICAL_DELTA) {
+            error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
+            return false;
+        }
+        // Wheel is within safe bounds after recovery.
+        // Skip velocity calculation on the first read to establish a clean delta on the next one.
+        velocity_ = 0;
+        desync_counter_ = 0;
     } else {
-        // Valid read
-        turn_count_ += wraps;
-        accumulated_position_ = (turn_count_ * 4096) + static_cast<int32_t>(raw_angle) - center_offset_;
-        velocity_ = new_velocity;
-        last_raw_angle_ = raw_angle;
-        last_time_us_ = now;
+        // ---- Filter Impossible Physics Jumps ----
+        if (delta > MAX_PHYSICAL_DELTA || delta < -MAX_PHYSICAL_DELTA) {
+            desync_counter_++;
+            if (desync_counter_ >= 10) {
+                error_flags_ |= SensorState::ERR_DESYNC;
+                return false;
+            }
+
+            // Impossible jump (likely I2C glitch)
+            // Recover gracefully by dead-reckoning the delta using the last known velocity
+            delta = (velocity_ * static_cast<int32_t>(dt_us)) / 1000;
+            
+            // Extrapolate what the raw angle should have been, accounting for potential wraps
+            int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
+            wraps = 0;
+            while (total_raw >= 4096) {
+                total_raw -= 4096;
+                wraps++;
+            }
+            while (total_raw < 0) {
+                total_raw += 4096;
+                wraps--;
+            }
+            
+            raw_angle = static_cast<uint16_t>(total_raw);
+        } else {
+            desync_counter_ = 0;
+            velocity_ = (delta * 1000) / static_cast<int32_t>(dt_us);
+        }
     }
+    
+    turn_count_ += wraps;
+    accumulated_position_ = (turn_count_ * 4096) + static_cast<int32_t>(raw_angle) - center_offset_;
+    
+    last_raw_angle_ = raw_angle;
+    last_time_us_ = now;
 
     return true;
 }

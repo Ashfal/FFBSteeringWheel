@@ -73,6 +73,14 @@ static void dma_isr() {
             g_state->led_status.set(SystemStatus::MagnetHigh);
         } else if (err & SensorState::ERR_MAGNET_LOW) {
             g_state->led_status.set(SystemStatus::MagnetLow);
+        } else if (err & SensorState::ERR_DESYNC) {
+            g_state->led_status.set(SystemStatus::EncoderDesync);
+            // Fatal error: stop the I2C loop entirely
+            alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+        } else if (err & SensorState::ERR_RECOVERY_DESYNC) {
+            g_state->led_status.set(SystemStatus::DesyncAfterRecovery);
+            // Fatal error: stop the I2C loop entirely
+            alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
         }
         return; // Skip FFB processing
     }

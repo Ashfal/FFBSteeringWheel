@@ -39,7 +39,14 @@ void usb_hid_send_input_report(SharedState& state) {
     JoystickInputReport report;
     report.reportId = 0x01;
     report.buttons  = state.buttons.load();
-    report.x        = static_cast<int16_t>(state.sensor.wheel_position.load());
+    int32_t pos = state.sensor.wheel_position.load();
+    if (pos > MAX_HALF_ANGLE_COUNTS) pos = MAX_HALF_ANGLE_COUNTS;
+    else if (pos < -MAX_HALF_ANGLE_COUNTS) pos = -MAX_HALF_ANGLE_COUNTS;
+
+    // Scale to the HID descriptor's expected logical min/max (-32767 to 32767)
+    pos = (pos * 32767) / MAX_HALF_ANGLE_COUNTS;
+
+    report.x        = static_cast<int16_t>(pos);
     report.accel    = static_cast<int16_t>(state.pedal_accel.load());
     report.brake    = static_cast<int16_t>(state.pedal_brake.load());
 

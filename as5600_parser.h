@@ -33,4 +33,5 @@ private:
 
     // Error state
     uint8_t  error_flags_ = 0;
+    uint8_t  desync_counter_ = 0;
 };

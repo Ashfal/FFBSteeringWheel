@@ -20,6 +20,8 @@ struct SensorState {
     static constexpr uint8_t ERR_MAGNET_LOW     = 0x02;
     static constexpr uint8_t ERR_MAGNET_MISSING = 0x04;
     static constexpr uint8_t ERR_I2C_WATCHDOG   = 0x08;
+    static constexpr uint8_t ERR_DESYNC         = 0x10;
+    static constexpr uint8_t ERR_RECOVERY_DESYNC = 0x20;
 };
 
 // =========================================================================
