@@ -36,23 +36,14 @@ static LEDController g_led;
 static FlashStorage g_flash;
 
 void handle_flash_calibration_loop() {
+    // 1. Tell Core 1 to run motor sweeps and find center
+    g_shared_state.led_status.set(SystemStatus::MotorSweepsActive);
+    multicore_fifo_push_blocking(1); // CMD_RUN_FLASH_CAL
+    multicore_fifo_pop_blocking();   // Wait for Ack (sweeps finished)
+    g_shared_state.led_status.clear(SystemStatus::MotorSweepsActive);
+
+    // 2. Pedal Calibration Phase
     g_shared_state.led_status.set(SystemStatus::PedalCalActive);
-
-    // Stop motor FFB (send emergency brake)
-    // Here we just disable actuators via shared state to ensure Core 1 isn't fighting us
-    g_shared_state.ffb.actuators_enabled = false;
-
-    // Phase 1: Center position is wherever the wheel is NOW
-    // We grab the absolute raw angle directly from the sensor state and modulo it
-    // to strictly keep it within 0-4095.
-    int32_t current_absolute_raw = g_shared_state.sensor.absolute_raw_angle.load();
-    int32_t raw_modulo = current_absolute_raw % 4096;
-    if (raw_modulo < 0) {
-        raw_modulo += 4096;
-    }
-    
-    // Actually, just save the current `position` as the new offset to add.
-    // We'll leave that to the flash struct.
 
     // Let's just track min/max for pedals
     uint16_t accel_min = 4095, accel_max = 0;
@@ -65,15 +56,15 @@ void handle_flash_calibration_loop() {
         sleep_ms(1);
     }
 
-    // Phase 2: User pumps pedals. Press cal button again to save.
-    while (true) {
+    // Phase 2: User pumps pedals. Long press cal button again to save.
+    uint64_t press_time_us = 0;
+    bool save_triggered = false;
+    
+    while (!save_triggered) {
         g_buttons.update();
         g_pedals.update();
         g_led.update();
 
-        // We need the raw ADC values, not the scaled ones.
-        // We can just add a getter for raw, or use the scaled ones if we bypass scaling during cal.
-        // For simplicity, let's assume PedalReader has a way to get raw, or we just read ADC directly here.
         // Quick hack: just read ADC directly since we're in a blocking cal loop anyway.
         adc_select_input(ADC_CHANNEL_ACCEL);
         uint16_t a_raw = adc_read();
@@ -86,19 +77,33 @@ void handle_flash_calibration_loop() {
         if (b_raw > brake_max) brake_max = b_raw;
 
         if (g_buttons.get_buttons() != 0) {
-            // Save pressed!
-            break;
+            if (press_time_us == 0) {
+                press_time_us = time_us_64();
+            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                save_triggered = true;
+            }
+        } else {
+            press_time_us = 0;
         }
         sleep_ms(1);
     }
 
-    // Save to flash
+    // Save everything to flash
     FlashCalibrationData data;
-    data.center_position = raw_modulo;
+    data.magic = 0xFEEDFACE;
+    data.version = 1;
+    data.center_position = g_shared_state.center_offset.load();
     data.accel_min = accel_min;
     data.accel_max = accel_max;
     data.brake_min = brake_min;
     data.brake_max = brake_max;
+    
+    data.cw_zero_pwm = g_shared_state.cal_luts.cw_zero_pwm;
+    data.ccw_zero_pwm = g_shared_state.cal_luts.ccw_zero_pwm;
+    for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+        data.cw_speed[i] = g_shared_state.cal_luts.cw_speed[i];
+        data.ccw_speed[i] = g_shared_state.cal_luts.ccw_speed[i];
+    }
 
     g_flash.save(data);
 
@@ -131,6 +136,14 @@ int main() {
         g_shared_state.center_offset.store(cal_data.center_position);
         g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
                                  cal_data.brake_min, cal_data.brake_max);
+                                 
+        g_shared_state.cal_luts.cw_zero_pwm = cal_data.cw_zero_pwm;
+        g_shared_state.cal_luts.ccw_zero_pwm = cal_data.ccw_zero_pwm;
+        for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+            g_shared_state.cal_luts.cw_speed[i] = cal_data.cw_speed[i];
+            g_shared_state.cal_luts.ccw_speed[i] = cal_data.ccw_speed[i];
+        }
+        g_shared_state.cal_luts.valid = true;
     } else {
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
         // Provide safe defaults
@@ -146,48 +159,46 @@ int main() {
     // Wait for Core 1 to be ready for the calibration command
     // (Core 1 blocks on FIFO immediately)
     
+    // Wait for user to press button to boot normally or start flash cal
     if (has_flash) {
-        // Wait for user to press calibration button to do the startup friction/speed cal
-        g_shared_state.led_status.set(SystemStatus::ReadyForCal);
-        
-        bool long_press = false;
-        uint64_t press_time_us = 0;
-
-        while (true) {
-            g_buttons.update();
-            g_led.update();
-
-            if (g_buttons.get_buttons() != 0) {
-                if (press_time_us == 0) {
-                    press_time_us = time_us_64();
-                } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
-                    long_press = true;
-                    break;
-                }
-            } else {
-                if (press_time_us > 0) {
-                    // Short press released
-                    break;
-                }
-            }
-            sleep_ms(1);
-        }
-
-        g_shared_state.led_status.clear(SystemStatus::ReadyForCal);
-
-        if (long_press) {
-            // Long press: Flash calibration
-            handle_flash_calibration_loop();
-        } else {
-            // Short press: Startup calibration (Core 1 does this)
-            multicore_fifo_push_blocking(1); // Command: Run Calibration
-            multicore_fifo_pop_blocking();   // Wait for Ack
-        }
+        g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {
-        // No flash data. We must force a flash calibration.
-        // Skip Core 1's startup cal since we have no center
-        multicore_fifo_push_blocking(0); // Command: Skip Calibration
+        g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
+    }
+    
+    bool long_press = false;
+    uint64_t press_time_us = 0;
+
+    while (true) {
+        g_buttons.update();
+        g_led.update();
+
+        if (g_buttons.get_buttons() != 0) {
+            if (press_time_us == 0) {
+                press_time_us = time_us_64();
+            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                long_press = true;
+                break;
+            }
+        } else {
+            if (press_time_us > 0) {
+                // Short press released
+                break;
+            }
+        }
+        sleep_ms(1);
+    }
+
+    g_shared_state.led_status.clear(SystemStatus::BootWait);
+    g_shared_state.led_status.clear(SystemStatus::FlashCalMissing);
+
+    if (long_press || !has_flash) {
+        // Long press OR no flash data: force Flash calibration
         handle_flash_calibration_loop();
+    } else {
+        // Short press: Normal Boot
+        multicore_fifo_push_blocking(0); // CMD_BOOT_NORMAL
+        // We do NOT wait for Ack on Boot Normal, Core 1 just starts running immediately.
     }
 
     // Init TinyUSB

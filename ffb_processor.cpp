@@ -82,6 +82,9 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     int32_t total_force = 0;
     uint64_t now = time_us_64();
 
+    // Take spinlock to safely read effects (Core 0 might be updating them via USB)
+    uint32_t irq = spin_lock_blocking(effects.lock);
+
     for (uint8_t i = 0; i < MAX_EFFECTS; i++) {
         const EffectSlot& e = effects.effects[i];
         if (e.state != EffectSlot::STATE_PLAYING) continue;
@@ -92,73 +95,62 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         // Check duration (0xFFFF or 0x7FFF = infinite)
         uint16_t duration = e.params.duration;
         if (duration != 0xFFFF && duration != 0x7FFF && elapsed_ms > duration) {
-            // Effect has expired — but we can't modify effects here (read-only)
-            // Core 1 will handle expiry in its loop
+            // Effect has expired
             continue;
         }
 
         // Direction scaling: angle_ratio based on directionX
-        // directionX: 0..255 maps to 0..360 degrees
-        // For a 1-axis wheel, we primarily care about the X-axis contribution
         uint32_t dir_angle = static_cast<uint32_t>(e.params.directionX) * 36000 / 255;
         int32_t angle_ratio = int_sin(dir_angle);
-        // angle_ratio is in -10000..+10000
-
         int32_t force = 0;
 
-        // Determine effect type from the effectType field
         switch (e.params.effectType) {
-            case 1:  // ET Constant Force (0x26)
-                force = calc_constant_force(e);
-                force = apply_envelope(e, force, elapsed_ms);
-                force = (force * angle_ratio) / 10000;
-                break;
-
-            case 2:  // ET Ramp (0x27)
-                force = calc_ramp_force(e, elapsed_ms);
-                force = apply_envelope(e, force, elapsed_ms);
-                force = (force * angle_ratio) / 10000;
-                break;
-
-            case 3:  // ET Square (0x30)
-            case 4:  // ET Sine (0x31)
-            case 5:  // ET Triangle (0x32)
-            case 6:  // ET Sawtooth Up (0x33)
-            case 7:  // ET Sawtooth Down (0x34)
-                force = calc_periodic_force(e, elapsed_ms);
-                force = apply_envelope(e, force, elapsed_ms);
-                force = (force * angle_ratio) / 10000;
-                break;
-
-            case 8:  // ET Spring (0x40) — uses position as metric
-                force = calc_condition_force(e, position, 0);
-                break;
-
-            case 9:  // ET Damper (0x41) — uses velocity as metric
-                force = calc_condition_force(e, velocity, 0);
-                break;
-
-            case 10: // ET Inertia (0x42) — uses acceleration as metric
-                // We don't track acceleration directly; approximate as 0
-                force = 0;
-                break;
-
-            case 11: // ET Friction (0x43) — uses velocity sign
-                force = calc_condition_force(e, velocity, 0);
-                break;
-
-            default:
-                break;
+            case 1: force = calc_constant_force(e); break;
+            case 2: force = calc_ramp_force(e, elapsed_ms); break;
+            case 3:
+            case 4:
+            case 5:
+            case 6:
+            case 7: force = calc_periodic_force(e, elapsed_ms); break;
+            case 8: force = calc_condition_force(e, position, 0); break;
+            case 9: force = calc_condition_force(e, velocity, 0); break;
+            case 10: force = 0; break;
+            case 11: force = calc_condition_force(e, velocity, 0); break;
+            default: break;
         }
 
-        // Apply per-effect gain (0..255 → 0..10000)
-        force = (force * e.params.gain) / 255;
-
-        total_force += force;
+        if (force != 0) {
+            if (e.params.effectType < 8 || e.params.effectType > 11) {
+                force = apply_envelope(e, force, elapsed_ms);
+                force = (force * angle_ratio) / 10000;
+            }
+            force = (force * e.params.gain) / 255;
+            total_force += force;
+        }
     }
+
+    spin_unlock(effects.lock, irq);
 
     // Apply device gain
     total_force = (total_force * effects.device_gain) / 255;
+
+    // ---- Overpower Detection (Dynamic Damping) ----
+    if (total_force != 0 && velocity != 0) {
+        int32_t expected_vel = lookup_expected_speed(total_force);
+        // Add a safety margin to avoid false positives from noise
+        expected_vel += VELOCITY_MARGIN;
+        
+        if (total_force > 0 && velocity > expected_vel) {
+            // User is throwing the wheel CW faster than the motor is pushing it
+            int32_t excess = velocity - expected_vel;
+            total_force -= (excess * DYNAMIC_DAMPING_FACTOR);
+        } 
+        else if (total_force < 0 && velocity < -expected_vel) {
+            // User is throwing the wheel CCW faster than the motor is pushing it
+            int32_t excess = (-velocity) - expected_vel;
+            total_force += (excess * DYNAMIC_DAMPING_FACTOR);
+        }
+    }
 
     // Clamp to output range
     if (total_force > 10000) total_force = 10000;

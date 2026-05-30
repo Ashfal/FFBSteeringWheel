@@ -23,13 +23,16 @@ static bool block_read_sensor(I2CDMA& i2c, AS5600Parser& parser) {
     return parser.update(status, angle);
 }
 
-// Find minimum PWM to overcome static friction (velocity > 0)
+// Find minimum PWM to overcome static friction
 static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser) {
     uint16_t test_pwm = 0;
     
     // Ensure we are stopped
-    motor.stop();
+    motor.brake();
     sleep_ms(200);
+
+    block_read_sensor(i2c, parser);
+    int32_t start_pos = parser.get_position();
 
     while (test_pwm < PWM_WRAP) {
         test_pwm += 10;
@@ -39,25 +42,28 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         motor.set_pwm(test_pwm, dir, fake_vel);
         
         // Wait briefly for movement
-        sleep_ms(10);
+        sleep_ms(20);
         
         block_read_sensor(i2c, parser);
-        int32_t vel = parser.get_velocity();
+        int32_t pos = parser.get_position();
         
-        // If we consistently have velocity in the right direction, we found it
-        if ((dir == MotorControl::Direction::CW && vel > 10) || (dir == MotorControl::Direction::CCW && vel < -10)) {
-            // Confirm with a second reading
-            sleep_ms(10);
-            block_read_sensor(i2c, parser);
-            vel = parser.get_velocity();
-            if ((dir == MotorControl::Direction::CW && vel > 10) || (dir == MotorControl::Direction::CCW && vel < -10)) {
-                break;
-            }
+        int32_t delta = pos - start_pos;
+        if (delta < 0) delta = -delta;
+
+        // If we moved at least 3 counts, static friction is broken
+        if (delta >= 3) {
+            break;
         }
     }
     
-    motor.stop();
-    sleep_ms(100);
+    motor.brake();
+    // Wait for wheel to settle
+    uint64_t settle_start = time_us_64();
+    while (time_us_64() - settle_start < 1000000) {
+        block_read_sensor(i2c, parser);
+        if (parser.get_velocity() == 0) break;
+        sleep_ms(10);
+    }
     return test_pwm;
 }
 
@@ -95,17 +101,19 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
         int32_t distance = pos - start_pos;
         if (!is_cw) distance = -distance;
         
-        if (elapsed > 500000) break; // 500ms timeout
+        if (elapsed > 2000000) break; // 2s timeout
         if (distance > CAL_MIN_SWEEP_COUNTS) break; // Travelled enough distance
         
-        // Safety check: end stop
-        if (pos > MAX_HALF_ANGLE_COUNTS - 1000 || pos < -MAX_HALF_ANGLE_COUNTS + 1000) {
-            break;
-        }
     }
     
-    motor.stop();
-    sleep_ms(100); // Wait for wheel to settle
+    motor.brake();
+    // Wait for wheel to settle
+    uint64_t settle_start = time_us_64();
+    while (time_us_64() - settle_start < 2000000) {
+        block_read_sensor(i2c, parser);
+        if (parser.get_velocity() == 0) break;
+        sleep_ms(10);
+    }
     
     // Convert to absolute value for LUTs
     return (max_vel >= 0) ? max_vel : -max_vel;
@@ -114,7 +122,19 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
 void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS5600Parser& parser) {
     if (!state) return;
     
-    state->led_status.set(SystemStatus::StartupCalActive);
+    // 1. Grab absolute raw center
+    // Do a single blocking read to get the raw angle
+    i2c.start_read();
+    sleep_ms(2);
+    const uint8_t* raw_data = i2c.get_data();
+    uint16_t angle = (static_cast<uint16_t>(raw_data[1]) << 8) | raw_data[2];
+    int32_t raw_center = angle & 0x0FFF;
+    
+    // Save to shared state and parser
+    state->center_offset.store(raw_center);
+    parser.set_center(raw_center);
+
+    state->led_status.set(SystemStatus::MotorSweepsActive);
     
     CalibrationLUTs& luts = state->cal_luts;
     luts.valid = false;
@@ -123,11 +143,14 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     block_read_sensor(i2c, parser);
     
     // 1. Find Zero PWM
-    luts.cw_zero_pwm = find_zero_pwm(MotorControl::Direction::CW, motor, i2c, parser);
-    luts.ccw_zero_pwm = find_zero_pwm(MotorControl::Direction::CCW, motor, i2c, parser);
+    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, motor, i2c, parser);
+    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, motor, i2c, parser);
     
     // Apply friction compensation immediately so the speed sweeps are accurate
-    motor.set_calibration_zero(luts.cw_zero_pwm, luts.ccw_zero_pwm);
+    motor.set_calibration_zero(cw_zero, ccw_zero);
+    
+    luts.cw_zero_pwm = cw_zero;
+    luts.ccw_zero_pwm = ccw_zero;
     
     // 2. Measure speeds at different force levels
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
@@ -142,5 +165,5 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     
     luts.valid = true;
     
-    state->led_status.clear(SystemStatus::StartupCalActive);
+    state->led_status.clear(SystemStatus::MotorSweepsActive);
 }

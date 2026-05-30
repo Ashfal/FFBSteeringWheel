@@ -109,14 +109,7 @@ static int64_t timer_callback(alarm_id_t id, void *user_data) {
 // =========================================================================
 // Core 1 Initialization
 // =========================================================================
-void core1_hw_init() {
-    g_i2c.init();
-    g_parser.init();
-    
-    // Apply flash calibration center
-    g_parser.set_center(g_state->center_offset.load());
-    g_motor.init();
-}
+
 
 void core1_init_interrupts() {
     // Enable DMA interrupt on Core 1
@@ -133,25 +126,33 @@ void core1_init_interrupts() {
 void core1_main() {
     if (!g_state) return;
 
-    core1_hw_init();
+    // Initialize I2C, Motor, and Parser
+    g_i2c.init();
+    g_parser.init();
+    g_motor.init();
 
-    g_ffb.init(&g_state->cal_luts);
-
-    // Wait for calibration command from Core 0
-    // We block here until main loop tells us to proceed
+    // Wait for boot or calibration command from Core 0
     uint32_t cal_cmd = multicore_fifo_pop_blocking();
     
     if (cal_cmd == 1) {
-        // Run blocking calibration routines
-        // (This function will temporarily take over the motor and sensor)
+        // CMD_RUN_FLASH_CAL
+        
+        // Run the motor and encoder calibration routine (now handles center capture internally)
         run_calibration(g_state, g_i2c, g_motor, g_parser);
         
-        // Acknowledge calibration complete
+        // Acknowledge sweeps complete
         multicore_fifo_push_blocking(1);
+        
+        // Halt. Core 0 will handle pedal cal and reboot.
+        while (true) {
+            tight_loop_contents();
+        }
     }
-
+    
+    // CMD_BOOT_NORMAL
     // Apply flash calibration center
-    // g_parser.set_center(...) should be called from flash data, handled in main/calibration.
+    g_parser.set_center(g_state->center_offset.load());
+    g_ffb.init(&g_state->cal_luts);
     
     // Apply friction compensation from LUTs
     g_motor.set_calibration_zero(g_state->cal_luts.cw_zero_pwm, g_state->cal_luts.ccw_zero_pwm);

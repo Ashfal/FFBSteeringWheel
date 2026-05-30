@@ -24,8 +24,14 @@ public:
     // Set raw PWM for calibration, with stall governor logic
     void set_pwm(uint16_t pwm, Direction dir, int32_t velocity);
 
-    // Immediate stop
+    // Immediate stop (coast)
     void stop();
+
+    // Active stop (short terminals)
+    void brake();
+
+    // Calculate maximum safe PWM based on current velocity
+    uint16_t get_safe_max_pwm(Direction dir, int32_t velocity);
 
 private:
     uint16_t cw_zero_pwm_ = 0;

@@ -70,6 +70,14 @@ constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
 constexpr uint16_t BACKWARDS_PWM_MAX            = 604;  // ~9.6% duty cycle
 
 // =========================================================================
+// PROTECTION ENVELOPE (Speed Limiter)
+// =========================================================================
+// Soft speed limiter to protect the user from dangerously fast wheel spins.
+// Limits forward accelerating torque, but allows braking/damping forces.
+constexpr int32_t VELOCITY_FADE_START    = 15; // ~110 RPM. Start reducing max PWM.
+constexpr int32_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
+
+// =========================================================================
 // AS5600 SENSOR
 // =========================================================================
 
@@ -122,19 +130,23 @@ constexpr uint32_t LED_PAUSE_MS          = 2000;
 constexpr uint8_t  MAX_EFFECTS           = 40;
 
 // =========================================================================
-// CALIBRATION
+// CALIBRATION & PHYSICS TUNING
 // =========================================================================
 
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
+// Overpower Detection (Dynamic Damping)
+constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
+constexpr int32_t VELOCITY_MARGIN        = 2;       // Safety margin (counts/ms) for imperfect LUT readings
+
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
-// Corresponds to 10%, 25%, 50%, 75%, 100% force
+// Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
 constexpr int32_t  CAL_FORCE_LEVELS[]    = {
+    500,
     1000,
-    2500,
-    5000,
-    7500,
-    10000
+    1500,
+    2000,
+    3000
 };
 constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = 5;
 
@@ -162,9 +174,9 @@ constexpr uint16_t USB_PID               = 0x4003;
 
 enum class SystemStatus : uint8_t {
     Normal           = 0,   // Solid ON — no flash code
-    ReadyForCal      = 1,   // Awaiting button press for calibration
-    StartupCalActive = 2,   // Startup calibration sweep in progress
-    PedalCalActive   = 3,   // Pedal calibration active
+    BootWait         = 1,   // Awaiting button press to boot or enter calibration
+    MotorSweepsActive = 2,  // Flash calibration: Motor sweeps in progress
+    PedalCalActive   = 3,   // Flash calibration: Pedal calibration in progress
     FlashCalMissing  = 5,   // No valid flash calibration data
     MagnetHigh       = 7,   // AS5600: magnet too strong (MH=1)
     MagnetLow        = 8,   // AS5600: magnet too weak (ML=1)

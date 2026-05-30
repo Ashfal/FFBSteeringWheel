@@ -48,6 +48,13 @@ void MotorControl::stop() {
     apply_pwm(0, Direction::OFF);
 }
 
+void MotorControl::brake() {
+    pwm_set_gpio_level(PIN_PWM_LPWM, 0);
+    pwm_set_gpio_level(PIN_PWM_RPWM, 0);
+    gpio_put(PIN_PWM_EN, 1);
+    current_direction_ = Direction::OFF;
+}
+
 void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     cw_zero_pwm_ = cw_zero;
     ccw_zero_pwm_ = ccw_zero;
@@ -66,26 +73,25 @@ void MotorControl::set_force(int32_t force, int32_t velocity) {
     // Determine the zero PWM offset based on direction
     uint16_t zero_pwm = (dir == Direction::CW) ? cw_zero_pwm_ : ccw_zero_pwm_;
 
-    // Scale the requested force (0..10000) into the active range (zero_pwm..FORWARD_MAX_PWM)
+    // Get the maximum safe PWM for this exact velocity
+    uint16_t safe_max_pwm = get_safe_max_pwm(dir, velocity);
+
+    // Scale the requested force (0..10000) into the active safe range (zero_pwm..safe_max_pwm)
     uint32_t pwm = 0;
-    if (FORWARD_MAX_PWM > zero_pwm) {
-        uint32_t active_range = FORWARD_MAX_PWM - zero_pwm;
+    if (safe_max_pwm > zero_pwm) {
+        uint32_t active_range = safe_max_pwm - zero_pwm;
         pwm = zero_pwm + ((abs_force * active_range) / 10000);
+    } else {
+        pwm = safe_max_pwm;
     }
     
-    set_pwm(static_cast<uint16_t>(pwm), dir, velocity);
+    // Apply directly, bypassing set_pwm since we already scaled to safe limits
+    apply_pwm(static_cast<uint16_t>(pwm), dir);
 }
 
-void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
-    if (pwm == 0 || dir == Direction::OFF) {
-        stop();
-        return;
-    }
+uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
+    if (dir == Direction::OFF) return 0;
 
-    if (pwm > PWM_WRAP) pwm = PWM_WRAP;
-
-    // ---- Stall Protection Governor ----
-    // Differentiate between moving "forward" (with the motor) and "backwards" (against the motor)
     bool is_forward = (dir == Direction::CW && velocity > 0) || (dir == Direction::CCW && velocity < 0);
     bool is_stalled = (velocity == 0);
     uint32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
@@ -102,6 +108,15 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
         } else {
             max_allowed_pwm = PWM_WRAP;
         }
+
+        // ---- Protection Envelope (Soft Speed Limiter) ----
+        if (abs_velocity >= static_cast<uint32_t>(MAX_SAFE_VELOCITY)) {
+            max_allowed_pwm = 0;
+        } else if (abs_velocity > static_cast<uint32_t>(VELOCITY_FADE_START)) {
+            uint32_t fade_range = MAX_SAFE_VELOCITY - VELOCITY_FADE_START;
+            uint32_t excess_speed = abs_velocity - VELOCITY_FADE_START;
+            max_allowed_pwm = max_allowed_pwm - ((max_allowed_pwm * excess_speed) / fade_range);
+        }
     } else {
         // Moving backwards (user fighting the motor)
         if (abs_velocity < static_cast<uint32_t>(BACKWARDS_VELOCITY_THRESHOLD)) {
@@ -112,6 +127,19 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
             max_allowed_pwm = BACKWARDS_PWM_MAX;
         }
     }
+
+    return max_allowed_pwm;
+}
+
+void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
+    if (pwm == 0 || dir == Direction::OFF) {
+        stop();
+        return;
+    }
+
+    if (pwm > PWM_WRAP) pwm = PWM_WRAP;
+
+    uint16_t max_allowed_pwm = get_safe_max_pwm(dir, velocity);
 
     if (pwm > max_allowed_pwm) {
         pwm = max_allowed_pwm;
