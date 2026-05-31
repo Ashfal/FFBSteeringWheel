@@ -23,6 +23,9 @@ public:
     const uint8_t* get_data() const { return rx_buf_; }
 
 private:
+    // Shared I2C peripheral + AS5600 setup (used by init and reset_bus)
+    void init_peripheral_();
+
     int dma_tx_chan_ = -1;
     int dma_rx_chan_ = -1;
 

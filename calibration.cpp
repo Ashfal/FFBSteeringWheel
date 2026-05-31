@@ -10,10 +10,15 @@
 #include "pico/time.h"
 
 // Helper to do a blocking I2C read during calibration
+// Returns false if the read times out or the sensor reports an error.
 static bool block_read_sensor(I2CDMA& i2c, AS5600Parser& parser) {
     i2c.start_read();
-    // Wait for ISR flag
+    // Wait for DMA completion with timeout (10ms — well above the ~0.3ms I2C transfer)
+    uint64_t deadline = time_us_64() + 10000;
     while (!i2c.handle_isr()) {
+        if (time_us_64() > deadline) {
+            return false;  // Timed out — AS5600 not responding
+        }
         tight_loop_contents();
     }
     

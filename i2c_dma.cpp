@@ -17,12 +17,20 @@
 #define I2C_CMD_STOP    0x200
 #define I2C_CMD_READ    0x100
 
-void I2CDMA::init() {
+void I2CDMA::init_peripheral_() {
     i2c_init(i2c0, I2C_FREQ_HZ);
     gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(PIN_I2C_SDA);
     gpio_pull_up(PIN_I2C_SCL);
+
+    // Initialize AS5600 CONF register (16-bit write: PM=00, SF=10, FTH=100, WD=0)
+    uint8_t config_data[3] = {AS5600_REG_CONF, AS5600_CONF_VALUE_H, AS5600_CONF_VALUE_L};
+    i2c_write_blocking(i2c0, AS5600_I2C_ADDR, config_data, 3, false);
+}
+
+void I2CDMA::init() {
+    init_peripheral_();
 
     dma_tx_chan_ = dma_claim_unused_channel(true);
     dma_rx_chan_ = dma_claim_unused_channel(true);
@@ -49,7 +57,8 @@ void I2CDMA::init() {
     channel_config_set_read_increment(&rx_cfg_, false);
     channel_config_set_write_increment(&rx_cfg_, true);
 
-    // Don't start yet
+    // Enable DMA IRQ for RX completion (once, not per-read)
+    dma_channel_set_irq0_enabled(dma_rx_chan_, true);
 }
 
 void I2CDMA::start_read() {
@@ -58,9 +67,17 @@ void I2CDMA::start_read() {
     i2c_get_hw(i2c0)->tar = AS5600_I2C_ADDR;
     i2c_get_hw(i2c0)->enable = 1;
 
-    // We must abort any pending DMA and clear FIFOs
+    // Clear any pending TX abort condition (prevents bus staying stuck after NACK)
+    (void)i2c_get_hw(i2c0)->clr_tx_abrt;
+
+    // RP2040-E13 safe DMA abort: disable IRQ, abort, clear spurious flag, re-enable
+    dma_channel_set_irq0_enabled(dma_rx_chan_, false);
     dma_channel_abort(dma_tx_chan_);
     dma_channel_abort(dma_rx_chan_);
+    dma_channel_acknowledge_irq0(dma_rx_chan_);
+    dma_channel_set_irq0_enabled(dma_rx_chan_, true);
+
+    // Drain any stale data from the I2C RX FIFO
     while (i2c_get_hw(i2c0)->status & I2C_IC_STATUS_RFNE_BITS) {
         (void)i2c_get_hw(i2c0)->data_cmd;
     }
@@ -76,9 +93,6 @@ void I2CDMA::start_read() {
                           tx_cmd_buf_,                    // src
                           4,                              // 4 commands total
                           false);
-
-    // Enable DMA IRQ for RX completion
-    dma_channel_set_irq0_enabled(dma_rx_chan_, true);
 
     // Start both
     dma_start_channel_mask((1u << dma_tx_chan_) | (1u << dma_rx_chan_));
@@ -128,10 +142,6 @@ void I2CDMA::reset_bus() {
     gpio_put(PIN_I2C_SDA, 1);
     sleep_us(5);
 
-    // 6. Re-initialize I2C peripheral to let the hardware take back control
-    i2c_init(i2c0, I2C_FREQ_HZ);
-    gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
-    gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
-    gpio_pull_up(PIN_I2C_SDA);
-    gpio_pull_up(PIN_I2C_SCL);
+    // 6. Re-initialize I2C peripheral and re-apply AS5600 config
+    init_peripheral_();
 }

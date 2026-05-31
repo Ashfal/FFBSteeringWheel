@@ -82,9 +82,14 @@ constexpr int32_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
 // =========================================================================
 
 constexpr uint8_t  AS5600_I2C_ADDR       = 0x36;
+constexpr uint8_t  AS5600_REG_CONF       = 0x07;
 constexpr uint8_t  AS5600_REG_STATUS     = 0x0B;
 constexpr uint8_t  AS5600_REG_RAW_ANGLE_H = 0x0C;
 constexpr uint8_t  AS5600_REG_RAW_ANGLE_L = 0x0D;
+
+// Initial CONF register values for AS5600 (PM=00, SF=10, FTH=100, WD=0)
+constexpr uint8_t  AS5600_CONF_VALUE_H   = 0x12;
+constexpr uint8_t  AS5600_CONF_VALUE_L   = 0x00;
 
 constexpr uint32_t I2C_FREQ_HZ           = 100000;  // 100 kHz
 
