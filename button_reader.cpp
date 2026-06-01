@@ -13,10 +13,13 @@
 #include "hardware/gpio.h"
 #include "hardware/timer.h"
 
+// Resolve SPI peripheral from config-derived instance number
+static auto* const SPI_PORT = SPI_INSTANCE == 0 ? spi0 : spi1;
+
 void ButtonReader::init() {
-    // Initialize SPI0
-    spi_init(spi0, SPI_FREQ_HZ);
-    spi_set_format(spi0, 8, SPI_CPOL_1, SPI_CPHA_0, SPI_MSB_FIRST);
+    // Initialize SPI peripheral
+    spi_init(SPI_PORT, SPI_FREQ_HZ);
+    spi_set_format(SPI_PORT, 8, SPI_CPOL_1, SPI_CPHA_0, SPI_MSB_FIRST);
 
     gpio_set_function(PIN_SPI_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SPI_RX,  GPIO_FUNC_SPI);
@@ -31,24 +34,24 @@ void ButtonReader::init() {
     dma_rx_chan_ = dma_claim_unused_channel(true);
     dma_channel_config tx_cfg = dma_channel_get_default_config(dma_tx_chan_);
     channel_config_set_transfer_data_size(&tx_cfg, DMA_SIZE_8);
-    channel_config_set_dreq(&tx_cfg, spi_get_dreq(spi0, true));
+    channel_config_set_dreq(&tx_cfg, spi_get_dreq(SPI_PORT, true));
     channel_config_set_read_increment(&tx_cfg, true);
     channel_config_set_write_increment(&tx_cfg, false);
 
     dma_channel_config rx_cfg = dma_channel_get_default_config(dma_rx_chan_);
     channel_config_set_transfer_data_size(&rx_cfg, DMA_SIZE_8);
-    channel_config_set_dreq(&rx_cfg, spi_get_dreq(spi0, false));
+    channel_config_set_dreq(&rx_cfg, spi_get_dreq(SPI_PORT, false));
     channel_config_set_read_increment(&rx_cfg, false);
     channel_config_set_write_increment(&rx_cfg, true);
 
     dma_channel_configure(dma_rx_chan_, &rx_cfg,
                           rx_buf_,                        // dest
-                          &spi_get_hw(spi0)->dr,          // src
+                          &spi_get_hw(SPI_PORT)->dr,          // src
                           2,                               // count
                           false);                          // don't start yet
 
     dma_channel_configure(dma_tx_chan_, &tx_cfg,
-                          &spi_get_hw(spi0)->dr,          // dest
+                          &spi_get_hw(SPI_PORT)->dr,          // dest
                           tx_dummy_,                       // src
                           2,                               // count
                           false);                          // don't start yet
@@ -88,12 +91,12 @@ void ButtonReader::update() {
         busy_wait_us_32(1);
 
         // 2. Restart DMA channels
-        dma_channel_set_read_addr(dma_rx_chan_, &spi_get_hw(spi0)->dr, false);
+        dma_channel_set_read_addr(dma_rx_chan_, &spi_get_hw(SPI_PORT)->dr, false);
         dma_channel_set_write_addr(dma_rx_chan_, rx_buf_, false);
         dma_channel_set_trans_count(dma_rx_chan_, 2, false);
 
         dma_channel_set_read_addr(dma_tx_chan_, tx_dummy_, false);
-        dma_channel_set_write_addr(dma_tx_chan_, &spi_get_hw(spi0)->dr, false);
+        dma_channel_set_write_addr(dma_tx_chan_, &spi_get_hw(SPI_PORT)->dr, false);
         dma_channel_set_trans_count(dma_tx_chan_, 2, false);
 
         // Start both channels simultaneously

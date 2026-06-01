@@ -12,13 +12,16 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 
+// Resolve I2C peripheral from config-derived instance number
+static auto* const I2C_PORT = i2c_get_instance(I2C_INSTANCE);
+
 // I2C DATA_CMD register flags
 #define I2C_CMD_RESTART 0x400
 #define I2C_CMD_STOP    0x200
 #define I2C_CMD_READ    0x100
 
 void I2CDMA::init_peripheral_() {
-    i2c_init(i2c0, I2C_FREQ_HZ);
+    i2c_init(I2C_PORT, I2C_FREQ_HZ);
     gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(PIN_I2C_SDA);
@@ -26,7 +29,7 @@ void I2CDMA::init_peripheral_() {
 
     // Initialize AS5600 CONF register (16-bit write: PM=00, SF=10, FTH=100, WD=0)
     uint8_t config_data[3] = {AS5600_REG_CONF, AS5600_CONF_VALUE_H, AS5600_CONF_VALUE_L};
-    i2c_write_blocking(i2c0, AS5600_I2C_ADDR, config_data, 3, false);
+    i2c_write_blocking(I2C_PORT, AS5600_I2C_ADDR, config_data, 3, false);
 }
 
 void I2CDMA::init() {
@@ -44,7 +47,7 @@ void I2CDMA::init() {
     // Configure TX DMA (writes commands to DATA_CMD)
     tx_cfg_ = dma_channel_get_default_config(dma_tx_chan_);
     channel_config_set_transfer_data_size(&tx_cfg_, DMA_SIZE_16);
-    channel_config_set_dreq(&tx_cfg_, i2c_get_dreq(i2c0, true));
+    channel_config_set_dreq(&tx_cfg_, i2c_get_dreq(I2C_PORT, true));
     channel_config_set_read_increment(&tx_cfg_, true);
     channel_config_set_write_increment(&tx_cfg_, false);
 
@@ -53,7 +56,7 @@ void I2CDMA::init() {
     // which doesn't produce RX data. 
     rx_cfg_ = dma_channel_get_default_config(dma_rx_chan_);
     channel_config_set_transfer_data_size(&rx_cfg_, DMA_SIZE_8); // We only care about the lower 8 bits
-    channel_config_set_dreq(&rx_cfg_, i2c_get_dreq(i2c0, false));
+    channel_config_set_dreq(&rx_cfg_, i2c_get_dreq(I2C_PORT, false));
     channel_config_set_read_increment(&rx_cfg_, false);
     channel_config_set_write_increment(&rx_cfg_, true);
 
@@ -63,12 +66,12 @@ void I2CDMA::init() {
 
 void I2CDMA::start_read() {
     // Set target address
-    i2c_get_hw(i2c0)->enable = 0;
-    i2c_get_hw(i2c0)->tar = AS5600_I2C_ADDR;
-    i2c_get_hw(i2c0)->enable = 1;
+    i2c_get_hw(I2C_PORT)->enable = 0;
+    i2c_get_hw(I2C_PORT)->tar = AS5600_I2C_ADDR;
+    i2c_get_hw(I2C_PORT)->enable = 1;
 
     // Clear any pending TX abort condition (prevents bus staying stuck after NACK)
-    (void)i2c_get_hw(i2c0)->clr_tx_abrt;
+    (void)i2c_get_hw(I2C_PORT)->clr_tx_abrt;
 
     // RP2040-E13 safe DMA abort: disable IRQ, abort, clear spurious flag, re-enable
     dma_channel_set_irq0_enabled(dma_rx_chan_, false);
@@ -78,18 +81,18 @@ void I2CDMA::start_read() {
     dma_channel_set_irq0_enabled(dma_rx_chan_, true);
 
     // Drain any stale data from the I2C RX FIFO
-    while (i2c_get_hw(i2c0)->status & I2C_IC_STATUS_RFNE_BITS) {
-        (void)i2c_get_hw(i2c0)->data_cmd;
+    while (i2c_get_hw(I2C_PORT)->status & I2C_IC_STATUS_RFNE_BITS) {
+        (void)i2c_get_hw(I2C_PORT)->data_cmd;
     }
 
     dma_channel_configure(dma_rx_chan_, &rx_cfg_,
                           rx_buf_,                        // dest
-                          &i2c_get_hw(i2c0)->data_cmd,    // src
+                          &i2c_get_hw(I2C_PORT)->data_cmd,    // src
                           3,                              // read 3 bytes
                           false);
 
     dma_channel_configure(dma_tx_chan_, &tx_cfg_,
-                          &i2c_get_hw(i2c0)->data_cmd,    // dest
+                          &i2c_get_hw(I2C_PORT)->data_cmd,    // dest
                           tx_cmd_buf_,                    // src
                           4,                              // 4 commands total
                           false);
@@ -112,7 +115,7 @@ void I2CDMA::reset_bus() {
     dma_channel_abort(dma_rx_chan_);
 
     // 2. Disable I2C peripheral to take manual control of pins
-    i2c_deinit(i2c0);
+    i2c_deinit(I2C_PORT);
 
     // 3. Configure pins as raw GPIO outputs to bit-bang a recovery
     gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_SIO);
@@ -145,3 +148,4 @@ void I2CDMA::reset_bus() {
     // 6. Re-initialize I2C peripheral and re-apply AS5600 config
     init_peripheral_();
 }
+

@@ -2,29 +2,34 @@
 #include <cstdint>
 
 // =========================================================================
-// GPIO PIN ASSIGNMENTS
+// GPIO PIN ASSIGNMENTS & PERIPHERAL MAPPING
 // =========================================================================
+// RP2040 peripheral instances are fixed by pin selection.
+// Derivation formulas (from RP2040 GPIO function table):
+//   I2C instance = (SDA_pin / 2) % 2
+//   SPI instance = (RX_pin / 8) % 2
+//   ADC channel  = pin - 26
 
-// I2C0 — AS5600 magnetic encoder
-constexpr uint8_t PIN_I2C_SDA          = 4;
-constexpr uint8_t PIN_I2C_SCL          = 5;
+// I2C — AS5600 magnetic encoder
+constexpr uint8_t PIN_I2C_SDA          = 14;
+constexpr uint8_t PIN_I2C_SCL          = 15;
 
-// SPI0 — HCF4021B shift registers (buttons)
+// SPI — HCF4021B shift registers (buttons)
 constexpr uint8_t PIN_SPI_SCK          = 18;
 constexpr uint8_t PIN_SPI_RX           = 16;   // MISO
-constexpr uint8_t PIN_SPI_LATCH        = 17;   // Directly wired parallel/serial control
+constexpr uint8_t PIN_SPI_LATCH        = 19;   // Directly wired parallel/serial control
 
 // PWM — BTS7960 H-Bridge
 constexpr uint8_t PIN_PWM_LPWM        = 6;
 constexpr uint8_t PIN_PWM_RPWM        = 7;
-constexpr uint8_t PIN_PWM_EN          = 8;     // Bridged left/right enable
+constexpr uint8_t PIN_PWM_EN          = 5;     // Bridged left/right enable
 
 // ADC — Analog pedals (0–3V)
-constexpr uint8_t PIN_ADC_ACCEL       = 26;    // ADC0
-constexpr uint8_t PIN_ADC_BRAKE       = 27;    // ADC1
+constexpr uint8_t PIN_ADC_ACCEL       = 26;
+constexpr uint8_t PIN_ADC_BRAKE       = 27;
 
 // Status LED
-constexpr uint8_t PIN_LED             = 25;    // Onboard LED
+constexpr uint8_t PIN_LED             = 22;
 
 // =========================================================================
 // WHEEL GEOMETRY (Raw Integer Units)
@@ -81,6 +86,9 @@ constexpr int32_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
 // AS5600 SENSOR
 // =========================================================================
 
+constexpr uint8_t  I2C_INSTANCE         = (PIN_I2C_SDA / 2) % 2;
+constexpr uint32_t I2C_FREQ_HZ           = 100000;  // 100 kHz
+
 constexpr uint8_t  AS5600_I2C_ADDR       = 0x36;
 constexpr uint8_t  AS5600_REG_CONF       = 0x07;
 constexpr uint8_t  AS5600_REG_STATUS     = 0x0B;
@@ -90,8 +98,6 @@ constexpr uint8_t  AS5600_REG_RAW_ANGLE_L = 0x0D;
 // Initial CONF register values for AS5600 (PM=00, SF=10, FTH=100, WD=0)
 constexpr uint8_t  AS5600_CONF_VALUE_H   = 0x12;
 constexpr uint8_t  AS5600_CONF_VALUE_L   = 0x00;
-
-constexpr uint32_t I2C_FREQ_HZ           = 100000;  // 100 kHz
 
 // AS5600 status register bits
 constexpr uint8_t  AS5600_STATUS_MH      = 0x08;    // Magnet too strong
@@ -106,6 +112,7 @@ constexpr int32_t  MAX_PHYSICAL_DELTA     = 200;
 // BUTTON READING (SPI)
 // =========================================================================
 
+constexpr uint8_t  SPI_INSTANCE         = (PIN_SPI_RX / 8) % 2;
 constexpr uint32_t SPI_FREQ_HZ           = 100000;  // 100 kHz (Matches I2C for better motor noise immunity)
 constexpr uint8_t  BUTTON_COUNT          = 16;       // 2x HCF4021B = 16 bits
 constexpr uint8_t  DEBOUNCE_READS        = 3;        // Rolling buffer depth
@@ -114,9 +121,9 @@ constexpr uint8_t  DEBOUNCE_READS        = 3;        // Rolling buffer depth
 // PEDAL READING (ADC)
 // =========================================================================
 
+constexpr uint8_t  ADC_CHANNEL_ACCEL     = PIN_ADC_ACCEL - 26;
+constexpr uint8_t  ADC_CHANNEL_BRAKE     = PIN_ADC_BRAKE - 26;
 constexpr uint32_t ADC_SAMPLE_FREQ_HZ    = 3000;    // 3 kHz
-constexpr uint8_t  ADC_CHANNEL_ACCEL     = 0;       // GP26
-constexpr uint8_t  ADC_CHANNEL_BRAKE     = 1;       // GP27
 constexpr int32_t  ADC_SPIKE_THRESHOLD_PERCENT = 30; // Spike rejection threshold
 constexpr uint8_t  ADC_FILTER_DEPTH      = 3;       // Rolling buffer depth
 
