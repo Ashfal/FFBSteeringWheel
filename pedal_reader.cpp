@@ -15,6 +15,7 @@ void PedalReader::init() {
     adc_init();
     adc_gpio_init(PIN_ADC_ACCEL);  // GP26 → ADC0
     adc_gpio_init(PIN_ADC_BRAKE);  // GP27 → ADC1
+    adc_gpio_init(PIN_ADC_VBUS);   // GP28 → ADC2
 }
 
 void PedalReader::set_calibration(uint16_t accel_min, uint16_t accel_max,
@@ -25,61 +26,83 @@ void PedalReader::set_calibration(uint16_t accel_min, uint16_t accel_max,
     brake_max_ = brake_max;
 }
 
-void PedalReader::update() {
-    // Read accelerator
+void PedalReader::read_raw_compensated(uint16_t &accel_comp, uint16_t &brake_comp) {
+    // Read raw values as close as possible to compensate spikes
+    adc_select_input(ADC_CHANNEL_VBUS);
+    uint16_t vbus_raw = adc_read();
+
     adc_select_input(ADC_CHANNEL_ACCEL);
     uint16_t accel_raw = adc_read();
 
-    // Read brake
     adc_select_input(ADC_CHANNEL_BRAKE);
     uint16_t brake_raw = adc_read();
 
-    // Store in rolling buffers
-    accel_history_[history_idx_] = accel_raw;
-    brake_history_[history_idx_] = brake_raw;
-    history_idx_ = (history_idx_ + 1) % ADC_FILTER_DEPTH;
-
-    // Apply median/spike filter and scale
-    accel_filtered_ = scale_to_16bit(
-        median_filter(accel_history_), accel_min_, accel_max_);
-    brake_filtered_ = scale_to_16bit(
-        median_filter(brake_history_), brake_min_, brake_max_);
+    if (vbus_raw == 0) {
+        accel_comp = 0;
+        brake_comp = 0;
+    } else {
+        if (accel_raw > vbus_raw) {
+            accel_raw = vbus_raw;
+        }
+        if (brake_raw > vbus_raw) {
+            brake_raw = vbus_raw;
+        }
+        accel_comp = static_cast<uint16_t>((static_cast<uint32_t>(accel_raw) * 4095) / vbus_raw);
+        brake_comp = static_cast<uint16_t>((static_cast<uint32_t>(brake_raw) * 4095) / vbus_raw);
+    }
 }
 
-uint16_t PedalReader::median_filter(uint16_t history[3]) {
-    uint16_t a = history[0];
-    uint16_t b = history[1];
-    uint16_t c = history[2];
+void PedalReader::update() {
+    uint16_t accel_comp = 0;
+    uint16_t brake_comp = 0;
+    read_raw_compensated(accel_comp, brake_comp);
 
-    // Calculate average for spike detection
-    uint32_t avg = (static_cast<uint32_t>(a) + b + c) / 3;
-    uint32_t threshold = (avg * ADC_SPIKE_THRESHOLD_PERCENT) / 100;
+    // Store in rolling buffers
+    accel_history_[history_idx_] = accel_comp;
+    brake_history_[history_idx_] = brake_comp;
+    history_idx_ = (history_idx_ + 1) % ADC_FILTER_DEPTH;
 
-    // Check each value — if it deviates by more than threshold, it's a spike
-    auto abs_diff = [](uint32_t x, uint32_t y) -> uint32_t {
-        return x > y ? x - y : y - x;
-    };
+    // Apply trimmed mean filter and scale
+    accel_filtered_ = scale_to_16bit(
+        trimmed_mean_filter(accel_history_, ADC_FILTER_DEPTH), accel_min_, accel_max_);
+    brake_filtered_ = scale_to_16bit(
+        trimmed_mean_filter(brake_history_, ADC_FILTER_DEPTH), brake_min_, brake_max_);
+}
 
-    bool a_spike = abs_diff(a, avg) > threshold;
-    bool b_spike = abs_diff(b, avg) > threshold;
-    bool c_spike = abs_diff(c, avg) > threshold;
+uint16_t PedalReader::trimmed_mean_filter(const uint16_t* history, uint8_t depth) {
+    // Requires at least 5 elements to discard 4 outliers
+    if (depth < 5) return 0;
 
-    // If exactly one is a spike, discard it and average the other two
-    if (a_spike && !b_spike && !c_spike) {
-        return static_cast<uint16_t>((static_cast<uint32_t>(b) + c) / 2);
+    uint16_t max1 = 0, max2 = 0;
+    uint16_t min1 = 65535, min2 = 65535;
+    uint32_t sum = 0;
+
+    // Single O(N) pass to sum all and track the 2 highest and 2 lowest values
+    for (uint8_t i = 0; i < depth; i++) {
+        uint16_t val = history[i];
+        sum += val;
+
+        if (val > max1) {
+            max2 = max1;
+            max1 = val;
+        } else if (val > max2) {
+            max2 = val;
+        }
+
+        if (val < min1) {
+            min2 = min1;
+            min1 = val;
+        } else if (val < min2) {
+            min2 = val;
+        }
     }
-    if (b_spike && !a_spike && !c_spike) {
-        return static_cast<uint16_t>((static_cast<uint32_t>(a) + c) / 2);
-    }
-    if (c_spike && !a_spike && !b_spike) {
-        return static_cast<uint16_t>((static_cast<uint32_t>(a) + b) / 2);
-    }
 
-    // No spike or multiple spikes — use median
-    if (a > b) { uint16_t t = a; a = b; b = t; }
-    if (b > c) { uint16_t t = b; b = c; c = t; }
-    if (a > b) { uint16_t t = a; a = b; b = t; }
-    return b;  // Median
+    // Discard the 4 outliers
+    sum -= (max1 + max2 + min1 + min2);
+
+    // Average the remaining elements
+    // When depth=20, depth-4 = 16. The compiler optimizes this division into a `>> 4` bitshift.
+    return static_cast<uint16_t>(sum / (depth - 4));
 }
 
 int16_t PedalReader::scale_to_16bit(uint16_t raw, uint16_t cal_min, uint16_t cal_max) {

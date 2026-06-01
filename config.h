@@ -27,6 +27,7 @@ constexpr uint8_t PIN_PWM_EN          = 5;     // Bridged left/right enable
 // ADC — Analog pedals (0–3V)
 constexpr uint8_t PIN_ADC_ACCEL       = 26;
 constexpr uint8_t PIN_ADC_BRAKE       = 27;
+constexpr uint8_t PIN_ADC_VBUS        = 28;
 
 // Status LED
 constexpr uint8_t PIN_LED             = 22;
@@ -115,7 +116,8 @@ constexpr int32_t  MAX_PHYSICAL_DELTA     = 200;
 constexpr uint8_t  SPI_INSTANCE         = (PIN_SPI_RX / 8) % 2;
 constexpr uint32_t SPI_FREQ_HZ           = 100000;  // 100 kHz (Matches I2C for better motor noise immunity)
 constexpr uint8_t  BUTTON_COUNT          = 16;       // 2x HCF4021B = 16 bits
-constexpr uint8_t  DEBOUNCE_READS        = 3;        // Rolling buffer depth
+constexpr uint8_t  DEBOUNCE_READS        = 4;        // Rolling buffer depth
+constexpr uint32_t BUTTON_UPDATE_INTERVAL_US = 2000; // 500 Hz
 
 // =========================================================================
 // PEDAL READING (ADC)
@@ -123,9 +125,10 @@ constexpr uint8_t  DEBOUNCE_READS        = 3;        // Rolling buffer depth
 
 constexpr uint8_t  ADC_CHANNEL_ACCEL     = PIN_ADC_ACCEL - 26;
 constexpr uint8_t  ADC_CHANNEL_BRAKE     = PIN_ADC_BRAKE - 26;
+constexpr uint8_t  ADC_CHANNEL_VBUS      = PIN_ADC_VBUS - 26;
 constexpr uint32_t ADC_SAMPLE_FREQ_HZ    = 3000;    // 3 kHz
-constexpr int32_t  ADC_SPIKE_THRESHOLD_PERCENT = 30; // Spike rejection threshold
-constexpr uint8_t  ADC_FILTER_DEPTH      = 3;       // Rolling buffer depth
+constexpr uint8_t  ADC_FILTER_DEPTH      = 20;      // 20 samples, discard top/bottom 2, average 16
+constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 
 // =========================================================================
 // LED STATUS CONTROLLER

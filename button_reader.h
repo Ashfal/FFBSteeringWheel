@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include "config.h"
 
 class ButtonReader {
 public:
@@ -8,7 +9,7 @@ public:
     uint16_t get_buttons() const { return debounced_; }
 
 private:
-    uint16_t history_[3] = {};
+    uint16_t history_[DEBOUNCE_READS] = {};
     uint8_t  history_idx_ = 0;
     uint16_t debounced_ = 0;
     int      dma_tx_chan_ = -1;

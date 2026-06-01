@@ -65,11 +65,10 @@ void handle_flash_calibration_loop() {
         g_pedals.update();
         g_led.update();
 
-        // Quick hack: just read ADC directly since we're in a blocking cal loop anyway.
-        adc_select_input(ADC_CHANNEL_ACCEL);
-        uint16_t a_raw = adc_read();
-        adc_select_input(ADC_CHANNEL_BRAKE);
-        uint16_t b_raw = adc_read();
+        // Read raw compensated values so calibration matches regular operation.
+        uint16_t a_raw = 0;
+        uint16_t b_raw = 0;
+        g_pedals.read_raw_compensated(a_raw, b_raw);
 
         if (a_raw < accel_min) accel_min = a_raw;
         if (a_raw > accel_max) accel_max = a_raw;
@@ -205,7 +204,8 @@ int main() {
     tusb_init();
 
     uint64_t last_usb_report_time_us = 0;
-    uint64_t last_input_read_time_us = 0;
+    uint64_t last_pedal_read_time_us = 0;
+    uint64_t last_button_read_time_us = 0;
 
     // Main Loop
     while (true) {
@@ -215,23 +215,26 @@ int main() {
 
         uint64_t now_us = time_us_64();
 
-        // Read inputs at 400Hz (every 2.5ms)
-        // Gives a perfect 7.5ms debounce window for buttons and pedals
-        if (now_us - last_input_read_time_us >= 2500) {
-            g_buttons.update();
+        // Read pedals at PEDAL_UPDATE_INTERVAL_US (0.5ms)
+        if (now_us - last_pedal_read_time_us >= PEDAL_UPDATE_INTERVAL_US) {
             g_pedals.update();
-            g_led.update();
-
-            // Store to shared state
-            g_shared_state.buttons.store(g_buttons.get_buttons());
             g_shared_state.pedal_accel.store(g_pedals.get_accel());
             g_shared_state.pedal_brake.store(g_pedals.get_brake());
+            last_pedal_read_time_us = now_us;
+        }
 
-            last_input_read_time_us = now_us;
+        // Read buttons at BUTTON_UPDATE_INTERVAL_US (2ms)
+        if (now_us - last_button_read_time_us >= BUTTON_UPDATE_INTERVAL_US) {
+            g_buttons.update();
+            g_shared_state.buttons.store(g_buttons.get_buttons());
+            last_button_read_time_us = now_us;
         }
 
         // Send joystick report at 100Hz (10ms)
         if (now_us - last_usb_report_time_us >= 10000) {
+            // Update LED at the same low frequency as the HID report
+            g_led.update();
+            
             usb_hid_send_input_report(g_shared_state);
             last_usb_report_time_us = now_us;
         }

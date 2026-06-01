@@ -9,7 +9,7 @@ Firmware for a Force Feedback (FFB) steering wheel controller targeting Euro Tru
 - **Motor:** 775 DC motor via BTS7960 H-Bridge (20kHz PWM). Pins: EN (bridged), LPWM, RPWM.
 - **Encoder:** AS5600 magnetic encoder on I2C at 100kHz. 1:2 gear ratio (8192 counts/wheel rev). CONF register initialized on boot for low-latency operation (PM=00, SF=10, FTH=100, WD=0).
 - **Buttons:** 16 buttons via 2× HCF4021B shift registers on SPI at 100kHz (pull-up: 0 = pressed).
-- **Pedals:** 2 analog pedals (0–3V) on ADC.
+- **Pedals:** 2 analog pedals (0–3V) on ADC (compensated ratiometrically via a VBUS reference on ADC2).
 - **LED:** Single LED for status/error flash codes.
 
 **Peripheral mapping:** I2C instance, SPI instance, and ADC channels are derived at compile time from pin numbers in `config.h` using RP2040 GPIO function table formulas. Source files resolve these via `I2C_PORT` / `SPI_PORT` macros — no hardcoded peripheral instances.
@@ -141,7 +141,7 @@ All tunable parameters live in `config.h`. This includes:
 | `usb_hid.cpp/.h` | TinyUSB HID callbacks, PID report routing, effect management |
 | `usb_descriptors.cpp` | USB device/config/HID/string descriptors, combined report descriptor assembly |
 | `usb_ffb_descriptors.h` | Raw PID HID descriptor + packed structs (DO NOT EDIT) |
-| `pedal_reader.cpp/.h` | ADC reading, spike rejection, signed 16-bit scaling |
+| `pedal_reader.cpp/.h` | ADC reading, VBUS ratiometric compensation, spike rejection, signed 16-bit scaling |
 | `button_reader.cpp/.h` | SPI DMA reading, 3-read debounce |
 | `led_controller.cpp/.h` | Non-blocking LED flash code state machine |
 | `flash_storage.cpp/.h` | Flash read/write with CRC32, `flash_safe_execute` for multicore safety |

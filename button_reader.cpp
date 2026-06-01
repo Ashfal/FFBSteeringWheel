@@ -74,9 +74,14 @@ void ButtonReader::update() {
         history_[history_idx_] = raw;
         history_idx_ = (history_idx_ + 1) % DEBOUNCE_READS;
 
-        // 5. Debounce: require 3 consecutive identical reads to change state in either direction.
-        debounced_ = (debounced_ & (history_[0] | history_[1] | history_[2])) | 
-                     (history_[0] & history_[1] & history_[2]);
+        // 5. Debounce: require DEBOUNCE_READS consecutive identical reads to change state in either direction.
+        uint16_t all_pressed = 0xFFFF;
+        uint16_t any_pressed = 0;
+        for (uint8_t i = 0; i < DEBOUNCE_READS; i++) {
+            all_pressed &= history_[i];
+            any_pressed |= history_[i];
+        }
+        debounced_ = (debounced_ & any_pressed) | all_pressed;
     }
 
     if (!dma_active_) {
