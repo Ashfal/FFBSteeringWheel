@@ -39,7 +39,14 @@ void handle_flash_calibration_loop() {
     // 1. Tell Core 1 to run motor sweeps and find center
     g_shared_state.led_status.set(SystemStatus::MotorSweepsActive);
     multicore_fifo_push_blocking(1); // CMD_RUN_FLASH_CAL
-    multicore_fifo_pop_blocking();   // Wait for Ack (sweeps finished)
+    
+    // Wait for Ack (sweeps finished) while keeping the LED blinking
+    while (!multicore_fifo_rvalid()) {
+        g_led.update();
+        sleep_ms(1);
+    }
+    multicore_fifo_pop_blocking(); // Consume the Ack
+    
     g_shared_state.led_status.clear(SystemStatus::MotorSweepsActive);
 
     // 2. Pedal Calibration Phase

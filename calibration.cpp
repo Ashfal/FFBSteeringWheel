@@ -106,7 +106,7 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
         int32_t distance = pos - start_pos;
         if (!is_cw) distance = -distance;
         
-        if (elapsed > 2000000) break; // 2s timeout
+        if (elapsed > 5000000) break; // 5s timeout
         if (distance > CAL_MIN_SWEEP_COUNTS) break; // Travelled enough distance
         
     }
@@ -139,8 +139,6 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     state->center_offset.store(raw_center);
     parser.set_center(raw_center);
 
-    state->led_status.set(SystemStatus::MotorSweepsActive);
-    
     CalibrationLUTs& luts = state->cal_luts;
     luts.valid = false;
     
@@ -169,6 +167,4 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     // If not, we could apply a smoothing pass here, but for now we just accept it.
     
     luts.valid = true;
-    
-    state->led_status.clear(SystemStatus::MotorSweepsActive);
 }
