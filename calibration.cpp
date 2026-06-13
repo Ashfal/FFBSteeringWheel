@@ -128,15 +128,26 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     if (!state) return;
     
     // 1. Grab absolute raw center
-    // Do a single blocking read to get the raw angle
-    i2c.start_read();
-    sleep_ms(2);
-    const uint8_t* raw_data = i2c.get_data();
-    uint16_t angle = (static_cast<uint16_t>(raw_data[1]) << 8) | raw_data[2];
-    int32_t raw_center = angle & 0x0FFF;
+    // Do a blocking read to get the raw angle safely
+    bool initial_read_ok = false;
+    for (int retry = 0; retry < 5; retry++) {
+        if (block_read_sensor(i2c, parser)) {
+            initial_read_ok = true;
+            break;
+        }
+        sleep_ms(5);
+    }
+    
+    if (!initial_read_ok) {
+        state->cal_luts.valid = false;
+        return;
+    }
+    
+    int32_t raw_center = parser.get_absolute_raw() & 0x0FFF;
     
     // Save to shared state and parser
     state->center_offset.store(raw_center);
+    parser.init();
     parser.set_center(raw_center);
 
     CalibrationLUTs& luts = state->cal_luts;

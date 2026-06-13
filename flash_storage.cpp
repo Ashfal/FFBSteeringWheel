@@ -79,6 +79,8 @@ bool FlashStorage::save(const FlashCalibrationData& data) {
 
 // Simple CRC32 implementation
 uint32_t FlashStorage::calculate_crc(const FlashCalibrationData& data) const {
+    static_assert(offsetof(FlashCalibrationData, crc32) == sizeof(FlashCalibrationData) - sizeof(uint32_t),
+                  "crc32 must be the last field in FlashCalibrationData");
     uint32_t crc = 0xFFFFFFFF;
     
     // Calculate CRC over everything EXCEPT the crc32 field itself

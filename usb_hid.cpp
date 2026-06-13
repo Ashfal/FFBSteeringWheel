@@ -13,6 +13,8 @@
 #include "shared_state.h"
 #include <cstring>
 
+static void send_pid_status(uint8_t effect_idx, bool playing);
+
 // Global pointer to shared state (set during init)
 static SharedState* g_state = nullptr;
 
@@ -36,6 +38,58 @@ struct __attribute__((packed)) JoystickInputReport {
 void usb_hid_send_input_report(SharedState& state) {
     if (!tud_hid_ready()) return;
 
+    static uint64_t last_playing_mask = 0;
+    static bool last_actuators_enabled = true;
+
+    // 1. Read current playing state and actuators state under lock
+    uint64_t current_playing_mask = 0;
+    bool current_actuators_enabled = false;
+
+    uint32_t irq = spin_lock_blocking(state.ffb.lock);
+    for (uint8_t i = 0; i < MAX_EFFECTS; i++) {
+        if (state.ffb.effects[i].state == EffectSlot::STATE_PLAYING) {
+            current_playing_mask |= (1ULL << i);
+        }
+    }
+    current_actuators_enabled = state.ffb.actuators_enabled;
+    spin_unlock(state.ffb.lock, irq);
+
+    // 2. Prioritize sending pending PID status reports over the joystick report
+    uint64_t diff = current_playing_mask ^ last_playing_mask;
+    if (diff != 0) {
+        // Find the first changed bit
+        for (uint8_t i = 0; i < MAX_EFFECTS; i++) {
+            if (diff & (1ULL << i)) {
+                bool playing = (current_playing_mask & (1ULL << i)) != 0;
+                send_pid_status(i + 1, playing);
+                // Update our last playing mask for only this bit, so we send the rest in future ticks
+                if (playing) {
+                    last_playing_mask |= (1ULL << i);
+                } else {
+                    last_playing_mask &= ~(1ULL << i);
+                }
+                return; // Sent one report, wait for next tick
+            }
+        }
+    }
+
+    if (current_actuators_enabled != last_actuators_enabled) {
+        // Find the first playing effect or use 0 for general status
+        uint8_t report_idx = 0;
+        bool playing = false;
+        for (uint8_t i = 0; i < MAX_EFFECTS; i++) {
+            if (current_playing_mask & (1ULL << i)) {
+                report_idx = i + 1;
+                playing = true;
+                break;
+            }
+        }
+        send_pid_status(report_idx, playing);
+        last_actuators_enabled = current_actuators_enabled;
+        return;
+    }
+
+    // 3. Send normal joystick report
     JoystickInputReport report;
     report.reportId = 0x01;
     report.buttons  = state.buttons.load();

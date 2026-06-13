@@ -147,6 +147,7 @@ void core1_main() {
         run_calibration(g_state, g_i2c, g_motor, g_parser);
         
         // Acknowledge sweeps complete
+        std::atomic_thread_fence(std::memory_order_release);
         multicore_fifo_push_blocking(1);
         
         // Halt. Core 0 will handle pedal cal and reboot.

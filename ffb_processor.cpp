@@ -95,9 +95,20 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         // Check duration (0xFFFF or 0x7FFF = infinite)
         uint16_t duration = e.params.duration;
         if (duration != 0xFFFF && duration != 0x7FFF && elapsed_ms > duration) {
-            // Effect has expired
-            e.state = EffectSlot::STATE_ALLOCATED;
-            continue;
+            // Loop or expire
+            if (e.loop_count == 0xFF) {
+                // Infinite loop
+                e.start_time_us = now;
+                elapsed_ms = 0;
+            } else if (e.loop_count > 1) {
+                e.loop_count--;
+                e.start_time_us = now;
+                elapsed_ms = 0;
+            } else {
+                // Expired
+                e.state = EffectSlot::STATE_ALLOCATED;
+                continue;
+            }
         }
 
         // Direction scaling: angle_ratio based on directionX
@@ -107,6 +118,8 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
 
         int32_t scaled_pos = (position * 10000) / MAX_HALF_ANGLE_COUNTS;
         int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY;
+        if (scaled_vel > 10000) scaled_vel = 10000;
+        else if (scaled_vel < -10000) scaled_vel = -10000;
 
         switch (e.params.effectType) {
             case 1: force = calc_constant_force(e); break;              // Constant Force

@@ -20,10 +20,10 @@ Firmware for a Force Feedback (FFB) steering wheel controller targeting Euro Tru
 ```
 Core 0 (main.cpp)                    Core 1 (core1_entry.cpp)
 ├── USB HID (TinyUSB) >1kHz          ├── 1ms alarm → I2C DMA read (AS5600)
-├── Input sampling at 400Hz           ├── DMA ISR → AS5600Parser → FFBProcessor → MotorControl
-│   ├── Button reading (SPI DMA)     ├── Calibration (blocking, runs before ISR enabled)
-│   ├── Pedal reading (ADC)          └── Background watchdog loop
-│   └── LED status controller
+├── Decoupled input polling:         ├── DMA ISR → AS5600Parser → FFBProcessor → MotorControl
+│   ├── Pedals at 2000Hz (ADC)       ├── Calibration (blocking, runs before ISR enabled)
+│   ├── Buttons at 500Hz (SPI DMA)   └── Background watchdog loop
+│   └── LED status at 100Hz
 ├── USB HID reports at 100Hz
 ├── Boot button wait & flash cal
 └── Flash storage (flash_safe_execute)
@@ -76,7 +76,9 @@ If CMD_RUN_FLASH_CAL:
 ### Core 0 Main Loop Timing
 
 - `tud_task()` runs every iteration (>1kHz USB polling)
-- Input sampling (buttons, pedals, LED) at 400Hz (every 2.5ms) — provides 7.5ms debounce window
+- Pedal sampling (ADC) at 2000Hz (every 0.5ms)
+- Button sampling (SPI DMA) at 500Hz (every 2ms) — provides 8ms debounce window (4-read)
+- LED status updates at 100Hz (every 10ms)
 - USB HID input reports at 100Hz (every 10ms)
 - `sleep_us(250)` per iteration to prevent pegging Core 0
 
@@ -142,7 +144,7 @@ All tunable parameters live in `config.h`. This includes:
 | `usb_descriptors.cpp` | USB device/config/HID/string descriptors, combined report descriptor assembly |
 | `usb_ffb_descriptors.h` | Raw PID HID descriptor + packed structs (DO NOT EDIT) |
 | `pedal_reader.cpp/.h` | ADC reading, VBUS ratiometric compensation, spike rejection, signed 16-bit scaling |
-| `button_reader.cpp/.h` | SPI DMA reading, 3-read debounce |
+| `button_reader.cpp/.h` | SPI DMA reading, 4-read debounce |
 | `led_controller.cpp/.h` | Non-blocking LED flash code state machine |
 | `flash_storage.cpp/.h` | Flash read/write with CRC32, `flash_safe_execute` for multicore safety |
 | `tusb_config.h` | TinyUSB configuration (endpoint sizes, HID buffer) |
@@ -169,7 +171,7 @@ All tunable parameters live in `config.h`. This includes:
 
 - **1ms:** I2C DMA read cycle (alarm-triggered)
 - **2ms:** Watchdog timeout (motor kill if DMA ISR hasn't fired)
-- **2.5ms:** Input sampling interval (buttons, pedals, LED — 400Hz)
+- **0.5ms / 2ms:** Decoupled input sampling intervals (pedals at 2000Hz, buttons at 500Hz)
 - **10ms:** USB HID input report rate (100Hz)
 - **50µs:** Dead-time between H-bridge direction changes
 - **250µs:** Core 0 main loop sleep (keeps `tud_task()` responsive at >1kHz)

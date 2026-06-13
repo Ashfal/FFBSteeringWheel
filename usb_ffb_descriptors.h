@@ -245,7 +245,7 @@ const uint8_t hid_report_descriptor[] = {
 	  0x09, 0x41,           // USAGE (41)
 	  0x09, 0x42,           // USAGE (42)
 	  0x09, 0x43,           // USAGE (43)
-	  0x09, 0x28,           // USAGE (28)
+//	  0x09, 0x28,           // USAGE (28)
 	  0x09, 0x28,           // Usage (ET Custom Force Data)
 	  0x15, 0x01,           //       Logical Minimum (1)
 	  0x25, 0x0C,           //       Logical Maximum (12)

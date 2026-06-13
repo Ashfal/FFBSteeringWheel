@@ -92,7 +92,7 @@ struct CalibrationLUTs {
     uint16_t cw_zero_pwm;
     uint16_t ccw_zero_pwm;
 
-    bool     valid;
+    bool     valid = false;
 };
 
 // =========================================================================

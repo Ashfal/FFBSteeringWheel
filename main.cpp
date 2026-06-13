@@ -46,6 +46,7 @@ void handle_flash_calibration_loop() {
         sleep_ms(1);
     }
     multicore_fifo_pop_blocking(); // Consume the Ack
+    std::atomic_thread_fence(std::memory_order_acquire);
     
     g_shared_state.led_status.clear(SystemStatus::MotorSweepsActive);
 
