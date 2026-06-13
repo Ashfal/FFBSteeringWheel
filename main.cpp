@@ -13,6 +13,7 @@
 #include "bsp/board_api.h"
 #include "hardware/adc.h"
 #include "hardware/watchdog.h"
+#include "pico/bootrom.h"
 #include "tusb.h"
 
 #include "config.h"
@@ -174,17 +175,31 @@ int main() {
     }
     
     bool long_press = false;
+    bool bootloader_mode = false;
     uint64_t press_time_us = 0;
+    int max_buttons_pressed = 0;
 
     while (true) {
         g_buttons.update();
         g_led.update();
 
-        if (g_buttons.get_buttons() != 0) {
+        uint16_t buttons_state = g_buttons.get_buttons();
+        if (buttons_state != 0) {
             if (press_time_us == 0) {
                 press_time_us = time_us_64();
-            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
-                long_press = true;
+                max_buttons_pressed = 0;
+            }
+            int num_pressed = __builtin_popcount(buttons_state);
+            if (num_pressed > max_buttons_pressed) {
+                max_buttons_pressed = num_pressed;
+            }
+            
+            if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                if (max_buttons_pressed >= 2) {
+                    bootloader_mode = true;
+                } else {
+                    long_press = true;
+                }
                 break;
             }
         } else {
@@ -198,6 +213,20 @@ int main() {
 
     g_shared_state.led_status.clear(SystemStatus::BootWait);
     g_shared_state.led_status.clear(SystemStatus::FlashCalMissing);
+
+    if (bootloader_mode) {
+        // Flash LED quickly to indicate bootloader transition
+        for (int i = 0; i < 10; i++) {
+            gpio_put(PIN_LED, 1);
+            sleep_ms(50);
+            gpio_put(PIN_LED, 0);
+            sleep_ms(50);
+        }
+        reset_usb_boot(1u << PIN_LED, 0);
+        while (true) {
+            tight_loop_contents();
+        }
+    }
 
     if (long_press || !has_flash) {
         // Long press OR no flash data: force Flash calibration
