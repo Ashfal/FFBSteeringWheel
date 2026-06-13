@@ -20,8 +20,8 @@ constexpr uint8_t PIN_SPI_RX           = 16;   // MISO
 constexpr uint8_t PIN_SPI_LATCH        = 19;   // Directly wired parallel/serial control
 
 // PWM — BTS7960 H-Bridge
-constexpr uint8_t PIN_PWM_LPWM        = 6;
-constexpr uint8_t PIN_PWM_RPWM        = 7;
+constexpr uint8_t PIN_PWM_LPWM        = 7;
+constexpr uint8_t PIN_PWM_RPWM        = 6;
 constexpr uint8_t PIN_PWM_EN          = 5;     // Bridged left/right enable
 
 // ADC — Analog pedals (0–3V)

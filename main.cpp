@@ -119,7 +119,9 @@ void handle_flash_calibration_loop() {
 
     // Reboot to apply new flash settings cleanly
     watchdog_enable(1, 1);
-    while(1);
+    while (true) {
+        tight_loop_contents();
+    }
 }
 
 

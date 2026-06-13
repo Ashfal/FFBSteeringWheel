@@ -29,7 +29,7 @@ struct FlashCmdArgs {
     size_t length;
 };
 
-static void flash_write_wrapper(void* param) {
+static void __not_in_flash_func(flash_write_wrapper)(void* param) {
     auto* args = static_cast<FlashCmdArgs*>(param);
     flash_range_erase(args->offset, FLASH_SECTOR_SIZE);
     flash_range_program(args->offset, args->data, FLASH_PAGE_SIZE);
