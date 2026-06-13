@@ -150,6 +150,10 @@ void core1_main() {
         std::atomic_thread_fence(std::memory_order_release);
         multicore_fifo_push_blocking(1);
         
+        // Core 1 MUST initialize as a lockout victim before halting,
+        // so that Core 0 can safely use flash_safe_execute!
+        multicore_lockout_victim_init();
+        
         // Halt. Core 0 will handle pedal cal and reboot.
         while (true) {
             tight_loop_contents();

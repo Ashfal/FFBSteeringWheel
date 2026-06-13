@@ -113,12 +113,20 @@ void handle_flash_calibration_loop() {
         data.ccw_speed[i] = g_shared_state.cal_luts.ccw_speed[i];
     }
 
-    g_flash.save(data);
-
+    bool save_success = g_flash.save(data);
     g_shared_state.led_status.clear(SystemStatus::PedalCalActive);
 
+    if (!save_success) {
+        g_shared_state.led_status.set(SystemStatus::FlashWriteFailed);
+        // Do not reboot; just stay here and flash the error code
+        while (true) {
+            g_led.update();
+            sleep_ms(1);
+        }
+    }
+
     // Reboot to apply new flash settings cleanly
-    watchdog_enable(1, 1);
+    watchdog_reboot(0, 0, 1);
     while (true) {
         tight_loop_contents();
     }

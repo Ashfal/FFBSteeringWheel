@@ -199,4 +199,5 @@ enum class SystemStatus : uint8_t {
     I2CWatchdogFired = 10,  // I2C DMA watchdog expired — motor killed
     EncoderDesync    = 11,  // Repeated impossible jumps — motor killed
     DesyncAfterRecovery = 12, // Impossible jump on first read after watchdog recovery
+    FlashWriteFailed = 13,  // Failed to save calibration data to flash
 };
