@@ -78,12 +78,13 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
     if (dt_us == 0) dt_us = 1;  // Prevent division by zero
 
     int32_t wraps = 0;
+    int32_t delta = 0;
 
     if (dt_us > 0) {
         float dt_ms = static_cast<float>(dt_us) / 1000.0f;
 
         // Determine shortest path for wrapped values
-        int32_t delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
+        delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
         if (delta > 2048) {
             delta -= 4096;
             wraps = -1;
@@ -131,7 +132,12 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
     }
 
     // Apply EMA smoothing to velocity for downstream consumers (motor governor)
-    filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
+    if (delta == 0) {
+        // If physically stopped, kill velocity immediately to prevent EMA lag from tricking the stall governor
+        filtered_velocity_ = 0.0f;
+    } else {
+        filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
+    }
     
     turn_count_ += wraps;
     accumulated_position_ = (turn_count_ * 4096) + static_cast<int32_t>(raw_angle) - center_offset_;

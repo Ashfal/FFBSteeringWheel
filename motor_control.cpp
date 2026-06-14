@@ -88,9 +88,7 @@ void MotorControl::set_force(int32_t force, float velocity) {
             pwm = zero_pwm + ((abs_force * active_range) / 10000);
         }
     } else {
-        // Governor limit is LOWER than static friction!
-        // We cannot use static friction compensation, so just scale linearly up to the limit.
-        pwm = (abs_force * static_cast<uint32_t>(safe_max_pwm)) / 10000;
+        pwm = safe_max_pwm;
     }
     
     // Apply directly, bypassing set_pwm since we already scaled to safe limits
