@@ -57,7 +57,7 @@ void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     ccw_zero_pwm_ = ccw_zero;
 }
 
-void MotorControl::set_force(int32_t force, int32_t velocity) {
+void MotorControl::set_force(int32_t force, float velocity) {
     if (force == 0) {
         stop();
         return;
@@ -88,47 +88,53 @@ void MotorControl::set_force(int32_t force, int32_t velocity) {
             pwm = zero_pwm + ((abs_force * active_range) / 10000);
         }
     } else {
-        pwm = safe_max_pwm;
+        // Governor limit is LOWER than static friction!
+        // We cannot use static friction compensation, so just scale linearly up to the limit.
+        pwm = (abs_force * static_cast<uint32_t>(safe_max_pwm)) / 10000;
     }
     
     // Apply directly, bypassing set_pwm since we already scaled to safe limits
     apply_pwm(static_cast<uint16_t>(pwm), dir);
 }
 
-uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
+uint16_t MotorControl::get_safe_max_pwm(Direction dir, float velocity) {
     if (dir == Direction::OFF) return 0;
 
-    bool is_forward = (dir == Direction::CW && velocity > 0) || (dir == Direction::CCW && velocity < 0);
-    bool is_stalled = (velocity == 0);
-    uint32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
+    bool is_forward = (dir == Direction::CW && velocity > 0.0f) || (dir == Direction::CCW && velocity < 0.0f);
+    bool is_stalled = (velocity == 0.0f);
+    float abs_velocity = (velocity >= 0.0f) ? velocity : -velocity;
     
     uint16_t max_allowed_pwm = FORWARD_MAX_PWM;
     
     if (is_stalled) {
         max_allowed_pwm = STALL_PWM_MAX;
     } else if (is_forward) {
-        if (abs_velocity < static_cast<uint32_t>(FORWARD_VELOCITY_THRESHOLD)) {
+        if (abs_velocity < static_cast<float>(FORWARD_VELOCITY_THRESHOLD)) {
             // Linearly increase from STALL_PWM_MAX to FORWARD_MAX_PWM
-            uint32_t range = FORWARD_MAX_PWM - STALL_PWM_MAX;
-            max_allowed_pwm = STALL_PWM_MAX + ((abs_velocity * range) / FORWARD_VELOCITY_THRESHOLD);
+            float range = static_cast<float>(FORWARD_MAX_PWM - STALL_PWM_MAX);
+            max_allowed_pwm = STALL_PWM_MAX + static_cast<uint16_t>((abs_velocity * range) / static_cast<float>(FORWARD_VELOCITY_THRESHOLD));
         } else {
             max_allowed_pwm = FORWARD_MAX_PWM;
         }
 
-        // ---- Protection Envelope (Soft Speed Limiter) ----
-        if (abs_velocity >= static_cast<uint32_t>(MAX_SAFE_VELOCITY)) {
-            max_allowed_pwm = 0;
-        } else if (abs_velocity > static_cast<uint32_t>(VELOCITY_FADE_START)) {
-            uint32_t fade_range = MAX_SAFE_VELOCITY - VELOCITY_FADE_START;
-            uint32_t excess_speed = abs_velocity - VELOCITY_FADE_START;
-            max_allowed_pwm = max_allowed_pwm - ((max_allowed_pwm * excess_speed) / fade_range);
+        // --- Hardware Safety: Max Velocity Fading (Protection Envelope) ---
+        // Fades out motor assistance if wheel is spinning too fast, protecting driver
+        if (abs_velocity > static_cast<float>(VELOCITY_FADE_START)) {
+            if (abs_velocity >= static_cast<float>(MAX_SAFE_VELOCITY)) {
+                max_allowed_pwm = 0;
+            } else {
+                float overspeed = abs_velocity - static_cast<float>(VELOCITY_FADE_START);
+                float fade_range = static_cast<float>(MAX_SAFE_VELOCITY - VELOCITY_FADE_START);
+                float fade_factor = 1.0f - (overspeed / fade_range);
+                max_allowed_pwm = static_cast<uint16_t>(max_allowed_pwm * fade_factor);
+            }
         }
     } else {
         // Moving backwards (user fighting the motor)
-        if (abs_velocity < static_cast<uint32_t>(BACKWARDS_VELOCITY_THRESHOLD)) {
+        if (abs_velocity < static_cast<float>(BACKWARDS_VELOCITY_THRESHOLD)) {
             // Linearly decrease from STALL_PWM_MAX to BACKWARDS_PWM_MAX
-            uint32_t range = STALL_PWM_MAX - BACKWARDS_PWM_MAX;
-            max_allowed_pwm = STALL_PWM_MAX - ((abs_velocity * range) / BACKWARDS_VELOCITY_THRESHOLD);
+            float range = static_cast<float>(STALL_PWM_MAX - BACKWARDS_PWM_MAX);
+            max_allowed_pwm = STALL_PWM_MAX - static_cast<uint16_t>((abs_velocity * range) / static_cast<float>(BACKWARDS_VELOCITY_THRESHOLD));
         } else {
             max_allowed_pwm = BACKWARDS_PWM_MAX;
         }
@@ -137,7 +143,7 @@ uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
     return max_allowed_pwm;
 }
 
-void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
+void MotorControl::set_pwm(uint16_t pwm, Direction dir, float velocity) {
     if (pwm == 0 || dir == Direction::OFF) {
         stop();
         return;
@@ -159,12 +165,19 @@ void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
     // If current_direction_ is OFF (boot up), no dead-time is needed.
     bool dir_changed = (dir != current_direction_ && current_direction_ != Direction::OFF);
 
-    if (pwm == 0 || dir == Direction::OFF) {
+    if (dir == Direction::OFF) {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, 0);
         gpio_put(PIN_PWM_EN, 0);
         // Do NOT set current_direction_ = OFF. This remembers the last active direction
         // so if the next non-zero force is in the opposite direction, dead-time fires correctly!
+        return;
+    }
+
+    if (pwm == 0) {
+        pwm_set_gpio_level(PIN_PWM_LPWM, 0);
+        pwm_set_gpio_level(PIN_PWM_RPWM, 0);
+        gpio_put(PIN_PWM_EN, 1); // Keep EN high for active braking to prevent chip power-cycling jitter
         return;
     }
 

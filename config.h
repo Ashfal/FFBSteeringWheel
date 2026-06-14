@@ -56,7 +56,6 @@ constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_P
 // Edge-aligned: TOP = 125_000_000 / 20_000 - 1 = 6249
 // Duty cycle range: 0 to PWM_WRAP (6249)
 
-constexpr uint32_t PWM_FREQ_HZ           = 20000;
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 constexpr uint16_t FORWARD_MAX_PWM       = 6249;   // Software limit for FFB max force
 
@@ -107,7 +106,12 @@ constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 
 // Maximum physically possible delta between reads (raw counts).
 // Any delta exceeding this is a sensor glitch and must be discarded.
-constexpr int32_t  MAX_PHYSICAL_DELTA     = 200;
+// 30 counts/ms = ~220 RPM. The soft limiter kicks in at 19 counts/ms.
+constexpr int32_t  MAX_PHYSICAL_DELTA     = 30;
+
+// Velocity EMA filter depth for motor governor noise suppression.
+// filtered += (raw - filtered) / N  — N=8 gives ~8ms time constant at 1ms sample rate.
+constexpr int32_t  VELOCITY_EMA_N         = 8;
 
 // =========================================================================
 // BUTTON READING (SPI)

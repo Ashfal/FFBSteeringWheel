@@ -51,7 +51,7 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 // Main calculation
 // =========================================================================
 
-FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
+FFBOutput FFBProcessor::calculate(int32_t position, float velocity,
                                   EffectState& effects) {
     FFBOutput out;
     out.force = 0;
@@ -65,7 +65,8 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
             : (position + MAX_HALF_ANGLE_COUNTS);
 
         // Proportional spring: force = -overshoot scaled to 10000 range
-        int32_t force = (-overshoot * 10000) / MAX_HALF_ANGLE_COUNTS;
+        // Scaling by 256 makes it extremely aggressive (hits a brick wall within ~11 degrees)
+        int32_t force = (-overshoot * 10000) / 256;
         if (force > 10000) force = 10000;
         if (force < -10000) force = -10000;
 
@@ -117,10 +118,10 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         int32_t angle_ratio = int_sin(dir_angle + 9000);
         int32_t force = 0;
 
-        int32_t scaled_pos = (position * 10000) / MAX_HALF_ANGLE_COUNTS;
-        int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY;
-        if (scaled_vel > 10000) scaled_vel = 10000;
-        else if (scaled_vel < -10000) scaled_vel = -10000;
+        float scaled_pos = (static_cast<float>(position) * 10000.0f) / static_cast<float>(MAX_HALF_ANGLE_COUNTS);
+        float scaled_vel = (velocity * 10000.0f) / static_cast<float>(MAX_SAFE_VELOCITY);
+        if (scaled_vel > 10000.0f) scaled_vel = 10000.0f;
+        else if (scaled_vel < -10000.0f) scaled_vel = -10000.0f;
 
         switch (e.params.effectType) {
             case 1: force = calc_constant_force(e); break;              // Constant Force
@@ -163,20 +164,20 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     total_force = (total_force * effects.device_gain) / 255;
 
     // ---- Overpower Detection (Dynamic Damping) ----
-    if (total_force != 0 && velocity != 0) {
-        int32_t expected_vel = lookup_expected_speed(total_force);
+    if (total_force != 0 && velocity != 0.0f) {
+        float expected_vel = lookup_expected_speed(total_force);
         // Add a safety margin to avoid false positives from noise
-        expected_vel += VELOCITY_MARGIN;
+        expected_vel += static_cast<float>(VELOCITY_MARGIN);
         
         if (total_force > 0 && velocity > expected_vel) {
             // User is throwing the wheel CW faster than the motor is pushing it
-            int32_t excess = velocity - expected_vel;
-            total_force -= (excess * DYNAMIC_DAMPING_FACTOR);
+            float excess = velocity - expected_vel;
+            total_force -= static_cast<int32_t>(excess * static_cast<float>(DYNAMIC_DAMPING_FACTOR));
         } 
         else if (total_force < 0 && velocity < -expected_vel) {
             // User is throwing the wheel CCW faster than the motor is pushing it
-            int32_t excess = (-velocity) - expected_vel;
-            total_force += (excess * DYNAMIC_DAMPING_FACTOR);
+            float excess = (-velocity) - expected_vel;
+            total_force += static_cast<int32_t>(excess * static_cast<float>(DYNAMIC_DAMPING_FACTOR));
         }
     }
 
@@ -273,7 +274,7 @@ int32_t FFBProcessor::calc_periodic_force(const EffectSlot& e, uint32_t elapsed_
     return force;
 }
 
-int32_t FFBProcessor::calc_condition_force(const EffectSlot& e, int32_t metric, uint8_t axis) {
+int32_t FFBProcessor::calc_condition_force(const EffectSlot& e, float metric, uint8_t axis) {
     if (axis >= 2) axis = 0;
     const auto& cond = e.condition[axis];
 
@@ -286,13 +287,16 @@ int32_t FFBProcessor::calc_condition_force(const EffectSlot& e, int32_t metric, 
 
     int32_t force = 0;
 
-    if (metric < (cp_offset - dead_band)) {
+    float f_cp_offset = static_cast<float>(cp_offset);
+    float f_dead_band = static_cast<float>(dead_band);
+    
+    if (metric < (f_cp_offset - f_dead_band)) {
         // Negative side
-        force = (neg_coeff * (metric - (cp_offset - dead_band))) / 10000;
+        force = static_cast<int32_t>((static_cast<float>(neg_coeff) * (metric - (f_cp_offset - f_dead_band))) / 10000.0f);
         if (force < -neg_sat) force = -neg_sat;
-    } else if (metric > (cp_offset + dead_band)) {
+    } else if (metric > (f_cp_offset + f_dead_band)) {
         // Positive side
-        force = (pos_coeff * (metric - (cp_offset + dead_band))) / 10000;
+        force = static_cast<int32_t>((static_cast<float>(pos_coeff) * (metric - (f_cp_offset + f_dead_band))) / 10000.0f);
         if (force > pos_sat) force = pos_sat;
     }
     // Inside dead band → force = 0
@@ -333,8 +337,8 @@ int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,
     return force;  // Sustain phase
 }
 
-int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
-    if (!cal_luts_ || !cal_luts_->valid) return 0;
+float FFBProcessor::lookup_expected_speed(int32_t force) const {
+    if (!cal_luts_ || !cal_luts_->valid) return 0.0f;
 
     bool is_cw = force > 0;
     int32_t abs_force = is_cw ? force : -force;
@@ -343,60 +347,63 @@ int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
     // Find the two bracketing force levels and interpolate
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         if (abs_force <= CAL_FORCE_LEVELS[i]) {
-            if (i == 0) return (abs_force * lut[0]) / CAL_FORCE_LEVELS[0];
+            if (i == 0) {
+                if (CAL_FORCE_LEVELS[0] == 0) return 0.0f;
+                return (static_cast<float>(abs_force) * static_cast<float>(lut[0])) / static_cast<float>(CAL_FORCE_LEVELS[0]);
+            }
             // Linear interpolation between lut[i-1] and lut[i]
-            int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
-            int32_t force_high = CAL_FORCE_LEVELS[i];
-            int32_t spd_low  = lut[i - 1];
-            int32_t spd_high = lut[i];
-            return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
+            float force_low  = static_cast<float>(CAL_FORCE_LEVELS[i - 1]);
+            float force_high = static_cast<float>(CAL_FORCE_LEVELS[i]);
+            float spd_low  = static_cast<float>(lut[i - 1]);
+            float spd_high = static_cast<float>(lut[i]);
+            return spd_low + ((spd_high - spd_low) * (static_cast<float>(abs_force) - force_low)) / (force_high - force_low);
         }
     }
     
     // Force exceeds the calibrated table (e.g. > 3000), extrapolate using the last two points
-    int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
-    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
+    float force_low  = static_cast<float>(CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2]);
+    float force_high = static_cast<float>(CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1]);
+    float spd_low  = static_cast<float>(lut[CAL_FORCE_LEVEL_COUNT - 2]);
+    float spd_high = static_cast<float>(lut[CAL_FORCE_LEVEL_COUNT - 1]);
     
-    return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
+    return spd_low + ((spd_high - spd_low) * (static_cast<float>(abs_force) - force_low)) / (force_high - force_low);
 }
 
-int32_t FFBProcessor::lookup_required_force(int32_t velocity) const {
+int32_t FFBProcessor::lookup_required_force(float velocity) const {
     if (!cal_luts_ || !cal_luts_->valid) return 0;
-    if (velocity == 0) return 0;
+    if (velocity == 0.0f) return 0;
 
-    bool is_cw = velocity > 0;
-    int32_t abs_vel = is_cw ? velocity : -velocity;
+    bool is_cw = velocity > 0.0f;
+    float abs_vel = is_cw ? velocity : -velocity;
     const int32_t* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
 
     // Find the two bracketing speed levels and interpolate the required force
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        if (abs_vel <= lut[i]) {
+        if (abs_vel <= static_cast<float>(lut[i])) {
             if (i == 0) {
                 if (lut[0] == 0) return CAL_FORCE_LEVELS[0];
-                return (abs_vel * CAL_FORCE_LEVELS[0]) / lut[0];
+                return static_cast<int32_t>((abs_vel * static_cast<float>(CAL_FORCE_LEVELS[0])) / static_cast<float>(lut[0]));
             }
             // Linear interpolation between lut[i-1] and lut[i]
-            int32_t spd_low  = lut[i - 1];
-            int32_t spd_high = lut[i];
-            int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
-            int32_t force_high = CAL_FORCE_LEVELS[i];
+            float spd_low  = static_cast<float>(lut[i - 1]);
+            float spd_high = static_cast<float>(lut[i]);
+            float force_low  = static_cast<float>(CAL_FORCE_LEVELS[i - 1]);
+            float force_high = static_cast<float>(CAL_FORCE_LEVELS[i]);
             
-            if (spd_high == spd_low) return force_high; // Prevent div by zero
-            return force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low);
+            if (spd_high == spd_low) return static_cast<int32_t>(force_high); // Prevent div by zero
+            return static_cast<int32_t>(force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low));
         }
     }
     
     // Velocity exceeds the calibrated table, extrapolate using the last two points
-    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
-    int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
+    float spd_low  = static_cast<float>(lut[CAL_FORCE_LEVEL_COUNT - 2]);
+    float spd_high = static_cast<float>(lut[CAL_FORCE_LEVEL_COUNT - 1]);
+    float force_low  = static_cast<float>(CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2]);
+    float force_high = static_cast<float>(CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1]);
     
-    if (spd_high == spd_low) return force_high; // Fallback
+    if (spd_high == spd_low) return static_cast<int32_t>(force_high); // Fallback
     
-    int32_t force = force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low);
+    int32_t force = static_cast<int32_t>(force_low + ((force_high - force_low) * (abs_vel - spd_low)) / (spd_high - spd_low));
     if (force > 10000) force = 10000;
     return force;
 }

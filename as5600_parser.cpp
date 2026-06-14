@@ -13,7 +13,8 @@
 
 void AS5600Parser::init() {
     accumulated_position_ = 0;
-    velocity_ = 0;
+    velocity_ = 0.0f;
+    filtered_velocity_ = 0.0f;
     turn_count_ = 0;
     last_raw_angle_ = 0;
     first_read_ = true;
@@ -38,8 +39,10 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
         error_flags_ |= 0x04;  // ERR_MAGNET_MISSING
     }
 
-    if (error_flags_ != 0) {
-        // Hardware error — do NOT update position or velocity
+    if (error_flags_ & 0x04) {
+        // Fatal hardware error (Magnet Missing) — do NOT update position or velocity.
+        // We allow the frame to process if only MH or ML warnings are present, 
+        // because the motor's own magnetic field can trigger them at high PWM.
         return false;
     }
 
@@ -71,34 +74,33 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
     }
 
     // Compute raw delta and check for wraps
-    int32_t delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
-    int32_t wraps = 0;
-    
-    if (delta > 2048) {
-        delta -= 4096;
-        wraps = -1;
-    } else if (delta < -2048) {
-        delta += 4096;
-        wraps = 1;
-    }
-
     uint64_t dt_us = now - last_time_us_;
     if (dt_us == 0) dt_us = 1;  // Prevent division by zero
 
-    bool is_recovery = (!first_read_ && dt_us > I2C_WATCHDOG_TIMEOUT_US);
+    int32_t wraps = 0;
 
-    if (is_recovery) {
-        if (delta > MAX_PHYSICAL_DELTA || delta < -MAX_PHYSICAL_DELTA) {
-            error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
-            return false;
+    if (dt_us > 0) {
+        float dt_ms = static_cast<float>(dt_us) / 1000.0f;
+
+        // Determine shortest path for wrapped values
+        int32_t delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
+        if (delta > 2048) {
+            delta -= 4096;
+            wraps = -1;
+        } else if (delta < -2048) {
+            delta += 4096;
+            wraps = 1;
         }
-        // Wheel is within safe bounds after recovery.
-        // Skip velocity calculation on the first read to establish a clean delta on the next one.
-        velocity_ = 0;
-        desync_counter_ = 0;
-    } else {
+
+        bool is_recovery = (error_flags_ & SensorState::ERR_I2C_WATCHDOG);
+
         // ---- Filter Impossible Physics Jumps ----
         if (delta > MAX_PHYSICAL_DELTA || delta < -MAX_PHYSICAL_DELTA) {
+            if (is_recovery) {
+                error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
+                return false;
+            }
+
             desync_counter_++;
             if (desync_counter_ >= 10) {
                 error_flags_ |= SensorState::ERR_DESYNC;
@@ -106,8 +108,8 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
             }
 
             // Impossible jump (likely I2C glitch)
-            // Recover gracefully by dead-reckoning the delta using the last known velocity
-            delta = (velocity_ * static_cast<int32_t>(dt_us)) / 1000;
+            // Recover gracefully by dead-reckoning the delta using the last known FILTERED velocity.
+            delta = static_cast<int32_t>(filtered_velocity_ * dt_ms);
             
             // Extrapolate what the raw angle should have been, accounting for potential wraps
             int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
@@ -124,9 +126,12 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
             raw_angle = static_cast<uint16_t>(total_raw);
         } else {
             desync_counter_ = 0;
-            velocity_ = (delta * 1000) / static_cast<int32_t>(dt_us);
+            velocity_ = static_cast<float>(delta) / dt_ms;
         }
     }
+
+    // Apply EMA smoothing to velocity for downstream consumers (motor governor)
+    filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
     
     turn_count_ += wraps;
     accumulated_position_ = (turn_count_ * 4096) + static_cast<int32_t>(raw_angle) - center_offset_;

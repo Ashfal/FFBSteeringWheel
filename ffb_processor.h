@@ -15,7 +15,7 @@ public:
     // position: wheel position in raw counts from center
     // velocity: raw counts per ms (signed)
     // effects: snapshot of current effect state (caller holds spinlock)
-    FFBOutput calculate(int32_t position, int32_t velocity,
+    FFBOutput calculate(int32_t position, float velocity,
                         EffectState& effects);
 
 private:
@@ -25,7 +25,7 @@ private:
     int32_t calc_constant_force(const EffectSlot& e);
     int32_t calc_ramp_force(const EffectSlot& e, uint32_t elapsed_ms);
     int32_t calc_periodic_force(const EffectSlot& e, uint32_t elapsed_ms);
-    int32_t calc_condition_force(const EffectSlot& e, int32_t metric, uint8_t axis);
+    int32_t calc_condition_force(const EffectSlot& e, float metric, uint8_t axis);
 
     // Envelope application
     int32_t apply_envelope(const EffectSlot& e, int32_t force, uint32_t elapsed_ms);
@@ -34,8 +34,8 @@ private:
     static int32_t int_sin(uint32_t angle_centideg);
 
     // Look up expected speed for a given PWM from calibration LUTs
-    int32_t lookup_expected_speed(int32_t force) const;
+    float lookup_expected_speed(int32_t force) const;
     
     // Look up required holding force for a given velocity from calibration LUTs
-    int32_t lookup_required_force(int32_t velocity) const;
+    int32_t lookup_required_force(float velocity) const;
 };

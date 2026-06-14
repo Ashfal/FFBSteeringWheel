@@ -11,7 +11,7 @@
 
 struct SensorState {
     std::atomic<int32_t>  wheel_position{0};     // Accumulated raw counts from center
-    std::atomic<int32_t>  wheel_velocity{0};     // Raw counts / ms (signed)
+    std::atomic<float>    wheel_velocity{0.0f};  // Filtered counts / ms (signed)
     std::atomic<int32_t>  absolute_raw_angle{0}; // Total absolute raw counts ignoring center offset
     std::atomic<uint8_t>  error_flags{0};        // Bit 0: MH, Bit 1: ML, Bit 2: MD missing
 
