@@ -92,9 +92,9 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         // Calculate elapsed time in ms
         uint32_t elapsed_ms = static_cast<uint32_t>((now - e.start_time_us) / 1000);
 
-        // Check duration (0xFFFF or 0x7FFF = infinite)
+        // Check duration (0xFFFF, 0x7FFF, or 0 = infinite)
         uint16_t duration = e.params.duration;
-        if (duration != 0xFFFF && duration != 0x7FFF && elapsed_ms > duration) {
+        if (duration != 0 && duration != 0xFFFF && duration != 0x7FFF && elapsed_ms > duration) {
             // Loop or expire
             if (e.loop_count == 0xFF) {
                 // Infinite loop
@@ -111,9 +111,10 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
             }
         }
 
-        // Direction scaling: angle_ratio based on directionX
+        // Direction scaling: project force onto X-axis using cosine.
+        // Linux FF API: direction 0 = East (+X), so X-component = cos(θ) = sin(θ + 90°).
         uint32_t dir_angle = static_cast<uint32_t>(e.params.directionX) * 36000 / 255;
-        int32_t angle_ratio = int_sin(dir_angle);
+        int32_t angle_ratio = int_sin(dir_angle + 9000);
         int32_t force = 0;
 
         int32_t scaled_pos = (position * 10000) / MAX_HALF_ANGLE_COUNTS;

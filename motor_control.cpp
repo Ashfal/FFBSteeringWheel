@@ -77,7 +77,16 @@ void MotorControl::set_force(int32_t force, int32_t velocity) {
     uint32_t pwm = 0;
     if (safe_max_pwm > zero_pwm) {
         uint32_t active_range = safe_max_pwm - zero_pwm;
-        pwm = zero_pwm + ((abs_force * active_range) / 10000);
+        
+        // Anti-chatter: fade in static friction compensation for forces under 1.5%
+        const uint32_t FRICTION_FADE_FORCE = 150; 
+        if (abs_force < FRICTION_FADE_FORCE) {
+            // Linearly ramp up to the zero_pwm threshold to avoid violent step-function chatter
+            pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;
+        } else {
+            // Full static friction compensation + scaled force
+            pwm = zero_pwm + ((abs_force * active_range) / 10000);
+        }
     } else {
         pwm = safe_max_pwm;
     }
