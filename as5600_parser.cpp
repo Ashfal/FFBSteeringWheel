@@ -133,9 +133,15 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
 
     // Apply EMA smoothing to velocity for downstream consumers (motor governor)
     if (delta == 0) {
-        // If physically stopped, kill velocity immediately to prevent EMA lag from tricking the stall governor
-        filtered_velocity_ = 0.0f;
+        zero_count_++;
+        // If physically stopped for multiple reads (3ms), kill velocity immediately to prevent EMA lag from tricking the stall governor
+        if (zero_count_ >= 3) {
+            filtered_velocity_ = 0.0f;
+        } else {
+            filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
+        }
     } else {
+        zero_count_ = 0;
         filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
     }
     

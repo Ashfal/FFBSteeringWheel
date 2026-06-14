@@ -67,6 +67,11 @@ FFBOutput FFBProcessor::calculate(int32_t position, float velocity,
         // Proportional spring: force = -overshoot scaled to 10000 range
         // Scaling by 256 makes it extremely aggressive (hits a brick wall within ~11 degrees)
         int32_t force = (-overshoot * 10000) / 256;
+        
+        // Add viscous damping to prevent violent undamped oscillation (bouncing)
+        // 200.0f gives ~30% damping force at 15 counts/ms
+        force -= static_cast<int32_t>(velocity * 200.0f);
+        
         if (force > 10000) force = 10000;
         if (force < -10000) force = -10000;
 
@@ -112,10 +117,12 @@ FFBOutput FFBProcessor::calculate(int32_t position, float velocity,
             }
         }
 
-        // Direction scaling: project force onto X-axis using cosine.
-        // Linux FF API: direction 0 = East (+X), so X-component = cos(θ) = sin(θ + 90°).
+        // Direction scaling: project force onto X-axis using USB PID / DirectInput standard.
+        // 0 degrees = North (0 X-force)
+        // 90 degrees = East (+X, full positive force)
+        // Therefore, X-component = sin(θ).
         uint32_t dir_angle = static_cast<uint32_t>(e.params.directionX) * 36000 / 255;
-        int32_t angle_ratio = int_sin(dir_angle + 9000);
+        int32_t angle_ratio = int_sin(dir_angle);
         int32_t force = 0;
 
         float scaled_pos = (static_cast<float>(position) * 10000.0f) / static_cast<float>(MAX_HALF_ANGLE_COUNTS);
@@ -301,7 +308,10 @@ int32_t FFBProcessor::calc_condition_force(const EffectSlot& e, float metric, ui
     }
     // Inside dead band → force = 0
 
-    return -force;  // Negate: condition forces resist the metric
+    // USB PID Standard: Force = Coefficient * Metric
+    // If the game wants the force to resist movement (like a centering spring), 
+    // it MUST provide a negative coefficient.
+    return force;
 }
 
 int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,

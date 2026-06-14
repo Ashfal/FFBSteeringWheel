@@ -30,6 +30,7 @@ private:
     // Velocity calculation
     float    velocity_ = 0.0f;            // Raw instantaneous counts/ms (used for dead-reckoning)
     float    filtered_velocity_ = 0.0f;   // EMA-smoothed counts/ms (used by motor governor)
+    uint8_t  zero_count_ = 0;             // Consecutive zero-velocity reads
     uint64_t last_time_us_ = 0;
 
     // Error state

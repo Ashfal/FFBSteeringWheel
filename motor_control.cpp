@@ -84,8 +84,12 @@ void MotorControl::set_force(int32_t force, float velocity) {
             // Linearly ramp up to the zero_pwm threshold to avoid violent step-function chatter
             pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;
         } else {
+            // Artificial "punch" boost to compress dynamic range and make weak forces feel stronger
+            uint32_t boosted_force = (abs_force * FORCE_BOOST_PERCENT) / 100;
+            if (boosted_force > 10000) boosted_force = 10000;
+            
             // Full static friction compensation + scaled force
-            pwm = zero_pwm + ((abs_force * active_range) / 10000);
+            pwm = zero_pwm + ((boosted_force * active_range) / 10000);
         }
     } else {
         pwm = safe_max_pwm;

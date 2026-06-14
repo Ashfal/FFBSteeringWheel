@@ -69,7 +69,9 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 // Stall protection governor:
 // Differentiates between moving forward (with the motor) and backwards (against the motor).
 // Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
-constexpr uint16_t STALL_PWM_MAX                = 2291; // ~36% duty cycle
+// Lowered STALL_PWM_MAX to prevent 5A power supply hiccuping at the end stops
+constexpr uint16_t STALL_PWM_MAX                = 3124; // ~50% duty cycle
+// Lowered threshold to match VELOCITY_FADE_START so motor can actually reach full power
 constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
 constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
 constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
@@ -148,6 +150,11 @@ constexpr uint32_t LED_PAUSE_MS          = 2000;
 
 constexpr uint8_t  MAX_EFFECTS           = 40;
 
+// Artificial boost to weak forces to make the wheel feel "punchier".
+// 100 = Linear (Accurate physics). >100 = Aggressive/Punchy (compresses dynamic range).
+// 250 means a 10% force from the game is physically amplified to feel like 25%.
+constexpr uint32_t FORCE_BOOST_PERCENT   = 100;
+
 // =========================================================================
 // CALIBRATION & PHYSICS TUNING
 // =========================================================================
@@ -156,7 +163,8 @@ constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
 // Overpower Detection (Dynamic Damping)
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
-constexpr int32_t VELOCITY_MARGIN        = 2;       // Safety margin (counts/ms) for imperfect LUT readings
+// Increased margin from 2 to 8 to prevent closed-loop oscillation caused by imperfect LUTs
+constexpr int32_t VELOCITY_MARGIN        = 8;       // Safety margin (counts/ms) for imperfect LUT readings
 
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
