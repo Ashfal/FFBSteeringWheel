@@ -6,14 +6,14 @@
 // Priority: highest SystemStatus enum value wins.
 // =========================================================================
 
-#include <atomic>
 #include "led_controller.h"
+#include "shared_state.h"
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
-// External access to the shared LED status
+// External access to the shared StatusState
 // (linked from main.cpp's SharedState)
-extern std::atomic<uint8_t>* g_led_status_ptr;
+extern StatusState* g_led_status_state_ptr;
 
 void LEDController::init() {
     gpio_init(PIN_LED);
@@ -23,10 +23,10 @@ void LEDController::init() {
 }
 
 void LEDController::update() {
-    // Read current status code from the atomic
+    // Read current status code
     uint8_t code = 0;
-    if (g_led_status_ptr) {
-        code = g_led_status_ptr->load();
+    if (g_led_status_state_ptr) {
+        code = static_cast<uint8_t>(g_led_status_state_ptr->get());
     }
 
     uint64_t now = time_us_64();
@@ -86,6 +86,11 @@ void LEDController::update() {
 
         case FlashPhase::PAUSE:
             if (elapsed_us >= LED_PAUSE_MS * 1000ULL) {
+                // One complete flash cycle finished — decrement the minimum display counter
+                if (g_led_status_state_ptr) {
+                    g_led_status_state_ptr->decrement_display_cycle();
+                }
+
                 // Restart the flash sequence
                 flashes_done_ = 0;
                 phase_ = FlashPhase::FLASH_ON;
@@ -97,4 +102,4 @@ void LEDController::update() {
 }
 
 // Global pointer — set by main.cpp
-std::atomic<uint8_t>* g_led_status_ptr = nullptr;
+StatusState* g_led_status_state_ptr = nullptr;

@@ -13,6 +13,7 @@ struct SensorState {
     std::atomic<int32_t>  wheel_position{0};     // Accumulated raw counts from center
     std::atomic<float>    wheel_velocity{0.0f};  // Filtered counts / ms (signed)
     std::atomic<int32_t>  absolute_raw_angle{0}; // Total absolute raw counts ignoring center offset
+    std::atomic<uint32_t> loop_time_avg_us{0};   // Exponential moving average of FFB loop execution time
     std::atomic<uint8_t>  error_flags{0};        // Bit 0: MH, Bit 1: ML, Bit 2: MD missing
 
     // Error flag bits
@@ -100,7 +101,9 @@ struct CalibrationLUTs {
 // =========================================================================
 
 struct StatusState {
-    std::atomic<uint8_t> status{static_cast<uint8_t>(SystemStatus::Normal)};
+    std::atomic<uint8_t> status{0};
+    std::atomic<uint8_t> min_cycles_remaining{0};
+    std::atomic<bool>    clear_pending{false};
 
     void set(SystemStatus s) {
         uint8_t val = static_cast<uint8_t>(s);
@@ -108,21 +111,49 @@ struct StatusState {
         uint8_t current = status.load();
         while (val > current) {
             if (status.compare_exchange_weak(current, val)) {
+                // Set minimum display cycles so the LED flashes long enough to see
+                // Exclude status codes 1 to 3 (BootWait, MotorSweepsActive, PedalCalActive)
+                if (val > 3) {
+                    min_cycles_remaining.store(LED_MIN_DISPLAY_CYCLES);
+                }
+                clear_pending.store(false);
                 break;
             }
         }
     }
 
     void clear(SystemStatus s) {
-        uint8_t val = static_cast<uint8_t>(s);
-        uint8_t current = status.load();
-        if (current == val) {
-            status.store(static_cast<uint8_t>(SystemStatus::Normal));
+        uint8_t expected = static_cast<uint8_t>(s);
+        
+        if (min_cycles_remaining.load() > 0) {
+            // Must finish minimum flash. If this is the active code, mark it to be cleared later.
+            if (status.load() == expected) {
+                clear_pending.store(true);
+            }
+            return; 
+        }
+        
+        // Only clear if this exact status is currently active
+        status.compare_exchange_strong(expected, 0);
+    }
+
+    // Called by LED controller at the end of each complete flash cycle
+    void decrement_display_cycle() {
+        uint8_t c = min_cycles_remaining.load();
+        if (c > 0) {
+            min_cycles_remaining.store(c - 1);
+            // If we just finished the minimum cycles and a clear is pending, clear it now
+            if (c - 1 == 0 && clear_pending.load()) {
+                status.store(0);
+                clear_pending.store(false);
+            }
         }
     }
 
     void force(SystemStatus s) {
         status.store(static_cast<uint8_t>(s));
+        min_cycles_remaining.store(0);
+        clear_pending.store(false);
     }
 
     SystemStatus get() const {
@@ -148,4 +179,8 @@ struct SharedState {
     // Pedal values (Core 0 only, signed 16-bit for USB HID report)
     std::atomic<int16_t> pedal_accel{-32767};
     std::atomic<int16_t> pedal_brake{-32767};
+
+    // Debug serial: one-shot AGC register read request
+    std::atomic<bool>    request_agc_read{false};
+    std::atomic<uint8_t> agc_value{0};
 };

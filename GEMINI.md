@@ -32,8 +32,9 @@ Core 0 (main.cpp)                    Core 1 (core1_entry.cpp)
      ├── SensorState      — Core 1 writes (atomics), Core 0 reads
      ├── EffectState       — Core 0 writes (spinlock), Core 1 reads
      ├── CalibrationLUTs   — Core 1 writes during calibration only
-     ├── StatusState       — Both cores write (atomic CAS)
+     ├── StatusState       — Both cores write (atomic CAS), tracks min display cycles
      └── Inputs            — Core 0 writes (atomics): buttons, pedals, center_offset
+     └── DebugSerial       — AGC read request flag and ring buffer for error logs
 ```
 
 ### Data Flow
@@ -141,11 +142,12 @@ All tunable parameters live in `config.h`. This includes:
 | `as5600_parser.cpp/.h` | Encoder position/velocity, glitch filter, dead-reckoning, desync detection |
 | `calibration.cpp/.h` | Static friction + speed LUT calibration sweeps, center capture |
 | `usb_hid.cpp/.h` | TinyUSB HID callbacks, PID report routing, effect management |
-| `usb_descriptors.cpp` | USB device/config/HID/string descriptors, combined report descriptor assembly |
+| `usb_descriptors.cpp` | USB device/config/HID/string descriptors, composite HID+CDC assembly |
 | `usb_ffb_descriptors.h` | Raw PID HID descriptor + packed structs (DO NOT EDIT) |
+| `debug_serial.cpp/.h` | USB CDC single-char command CLI for live status, error logs, and calibration dumps |
 | `pedal_reader.cpp/.h` | ADC reading, VBUS ratiometric compensation, spike rejection, signed 16-bit scaling |
 | `button_reader.cpp/.h` | SPI DMA reading, 4-read debounce |
-| `led_controller.cpp/.h` | Non-blocking LED flash code state machine |
+| `led_controller.cpp/.h` | Non-blocking LED flash code state machine with minimum display guarantees |
 | `flash_storage.cpp/.h` | Flash read/write with CRC32, `flash_safe_execute` for multicore safety |
 | `tusb_config.h` | TinyUSB configuration (endpoint sizes, HID buffer) |
 
@@ -162,10 +164,11 @@ All tunable parameters live in `config.h`. This includes:
 6. **Electronic end-stops** in `FFBProcessor` apply a proportional reverse spring force when the wheel exceeds `MAX_HALF_ANGLE_COUNTS`, short-circuiting all other effect processing.
 7. **Dynamic damping (overpower detection)** in `FFBProcessor`: if the wheel velocity exceeds the expected speed for the commanded force (from calibration LUTs + safety margin), a damping counter-force is applied to prevent the wheel from overshooting.
 8. **I2C watchdog** stops the motor and attempts aggressive bus recovery (SCL bit-bang + peripheral reinit + AS5600 CONF rewrite) if the 1ms DMA loop stalls. The 1ms alarm is cancelled during bus recovery to prevent `start_read()` racing with the reset.
-9. **Sensor error early-exit:** If the AS5600 reports a magnet error (MH, ML, or MD missing), the DMA ISR immediately stops the motor and skips FFB processing.
-10. **Glitch filter with dead-reckoning:** If the AS5600 reports an impossible position jump (delta > `MAX_PHYSICAL_DELTA`), the parser extrapolates position from the last known velocity instead of accepting the bad data. After 10 consecutive impossible jumps, a fatal `EncoderDesync` error stops the motor and halts the I2C loop.
-11. **Recovery desync detection:** On the first read after an I2C watchdog recovery, if the delta exceeds `MAX_PHYSICAL_DELTA`, a fatal `DesyncAfterRecovery` error is raised rather than trusting potentially stale data.
-12. **Flash writes use `flash_safe_execute`** to safely pause Core 1 and prevent XIP conflicts during erase/program operations.
+9. **Sensor error tolerance:** Transient I2C/EMI dropouts (missing MD bit) are ignored for up to `MAGNET_ERROR_TOLERANCE_FRAMES`. If the error persists, the DMA ISR stops the motor, skips FFB processing, logs to the debug buffer, and sets the LED error code.
+10. **LED visibility guarantees:** Transient status codes are guaranteed to flash for at least `LED_MIN_DISPLAY_CYCLES` complete sequences before a self-clearing condition can turn the LED back to solid ON.
+11. **Glitch filter with dead-reckoning:** If the AS5600 reports an impossible position jump (delta > `MAX_PHYSICAL_DELTA`), the parser extrapolates position from the last known velocity instead of accepting the bad data. After 10 consecutive impossible jumps, a fatal `EncoderDesync` error stops the motor and halts the I2C loop.
+12. **Recovery desync detection:** On the first read after an I2C watchdog recovery, if the delta exceeds `MAX_PHYSICAL_DELTA`, a fatal `DesyncAfterRecovery` error is raised rather than trusting potentially stale data.
+13. **Flash writes use `flash_safe_execute`** to safely pause Core 1 and prevent XIP conflicts during erase/program operations.
 
 ## Timing Constraints
 

@@ -32,6 +32,7 @@ add_executable(ffb_steering_wheel
     i2c_dma.cpp
     calibration.cpp
     flash_storage.cpp
+    debug_serial.cpp
 )
 
 # Pull in our pico_stdlib which aggregates commonly used features

@@ -70,7 +70,7 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 // Differentiates between moving forward (with the motor) and backwards (against the motor).
 // Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
 // Lowered STALL_PWM_MAX to prevent 5A power supply hiccuping at the end stops
-constexpr uint16_t STALL_PWM_MAX                = 3124; // ~50% duty cycle
+constexpr uint16_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
 // Lowered threshold to match VELOCITY_FADE_START so motor can actually reach full power
 constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
 constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
@@ -111,6 +111,10 @@ constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 // 30 counts/ms = ~220 RPM. The soft limiter kicks in at 19 counts/ms.
 constexpr int32_t  MAX_PHYSICAL_DELTA     = 30;
 
+// Number of consecutive bad magnet reads before motor is killed.
+// Allows the motor to coast through 1-2ms EMI-induced sensor glitches.
+constexpr uint8_t  MAGNET_ERROR_TOLERANCE_FRAMES = 3;
+
 // Velocity EMA filter depth for motor governor noise suppression.
 // filtered += (raw - filtered) / N  — N=8 gives ~8ms time constant at 1ms sample rate.
 constexpr int32_t  VELOCITY_EMA_N         = 8;
@@ -143,6 +147,9 @@ constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 constexpr uint32_t LED_FLASH_ON_MS       = 200;
 constexpr uint32_t LED_FLASH_OFF_MS      = 500;
 constexpr uint32_t LED_PAUSE_MS          = 2000;
+// Minimum number of complete flash cycles before a clear() takes effect.
+// Ensures transient errors are visible long enough to read.
+constexpr uint8_t  LED_MIN_DISPLAY_CYCLES = 2;
 
 // =========================================================================
 // FFB CONFIGURATION
@@ -185,7 +192,7 @@ constexpr int32_t  CAL_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 2;  // 4096
 // =========================================================================
 
 constexpr uint32_t I2C_READ_INTERVAL_US  = 1000;    // 1 ms
-constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 2000;  // 2 ms — motor kill if missed
+constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 5000;  // 5 ms — motor kill if missed
 
 // =========================================================================
 // USB

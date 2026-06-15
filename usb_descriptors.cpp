@@ -183,15 +183,20 @@ uint8_t const* tud_descriptor_device_cb(void) {
 
 enum {
     ITF_NUM_HID = 0,
-    ITF_NUM_TOTAL
+    ITF_NUM_CDC = 1,
+    ITF_NUM_CDC_DATA = 2,
+    ITF_NUM_TOTAL = 3
 };
 
-#define EPNUM_HID    0x81
+#define EPNUM_HID         0x81
+#define EPNUM_CDC_NOTIF   0x82
+#define EPNUM_CDC_OUT     0x03
+#define EPNUM_CDC_IN      0x83
 
 // TUD_HID_DESCRIPTOR uses sizeof(desc_hid_report) for wDescriptorLength.
 // We need to use COMBINED_REPORT_DESC_SIZE instead, so we build manually.
 // TUD_HID_DESCRIPTOR(itf, str, proto, report_len, epin, bufsize, poll)
-#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN)
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
 
 static uint8_t desc_configuration[CONFIG_TOTAL_LEN];
 static bool config_built = false;
@@ -206,7 +211,9 @@ static void build_config_descriptor() {
                               TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
         TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE,
                            COMBINED_REPORT_DESC_SIZE, EPNUM_HID,
-                           CFG_TUD_HID_EP_BUFSIZE, 1)
+                           CFG_TUD_HID_EP_BUFSIZE, 1),
+        TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8,
+                           EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
     };
 
     static_assert(sizeof(config_desc) == CONFIG_TOTAL_LEN, "Config descriptor size mismatch");
@@ -239,6 +246,7 @@ static const char* string_desc_arr[] = {
     "FFBWheel",                      // 1: Manufacturer
     "FFB Steering Wheel",            // 2: Product
     nullptr,                         // 3: Serial (uses board unique ID)
+    "FFBWheel Debug",                // 4: CDC interface string
 };
 
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
@@ -262,6 +270,7 @@ uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {
                 return nullptr;
             }
             const char* str = string_desc_arr[index];
+            if (!str) return nullptr;
             chr_count = strlen(str);
             if (chr_count > 31) chr_count = 31;
             for (size_t i = 0; i < chr_count; i++) {

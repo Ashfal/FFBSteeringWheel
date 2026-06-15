@@ -24,12 +24,13 @@
 #include "pedal_reader.h"
 #include "led_controller.h"
 #include "flash_storage.h"
+#include "debug_serial.h"
 
 // Instantiate the global shared state
 SharedState g_shared_state;
 
 // Link LED status to the global controller pointer
-extern std::atomic<uint8_t>* g_led_status_ptr;
+extern StatusState* g_led_status_state_ptr;
 
 static ButtonReader g_buttons;
 static PedalReader  g_pedals;
@@ -118,6 +119,7 @@ void handle_flash_calibration_loop() {
 
     if (!save_success) {
         g_shared_state.led_status.set(SystemStatus::FlashWriteFailed);
+        debug_log_error(SystemStatus::FlashWriteFailed);
         // Do not reboot; just stay here and flash the error code
         while (true) {
             g_led.update();
@@ -138,7 +140,7 @@ int main() {
     stdio_init_all();
 
     // Link LED status
-    g_led_status_ptr = &g_shared_state.led_status.status;
+    g_led_status_state_ptr = &g_shared_state.led_status;
 
     g_led.init();
     g_buttons.init();
@@ -146,6 +148,9 @@ int main() {
 
     // Init USB HID layer (sets up spinlocks)
     usb_hid_init(g_shared_state);
+    
+    // Init Debug Serial console
+    debug_serial_init(&g_shared_state);
 
     // Load flash data
     FlashCalibrationData cal_data;
@@ -164,6 +169,7 @@ int main() {
         g_shared_state.cal_luts.valid = true;
     } else {
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
+        debug_log_error(SystemStatus::FlashCalMissing);
         // Provide safe defaults
         g_pedals.set_calibration(100, 4000, 100, 4000);
     }
@@ -182,6 +188,7 @@ int main() {
         g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
+        debug_log_error(SystemStatus::FlashCalMissing);
     }
     
     bool long_press = false;
@@ -259,6 +266,9 @@ int main() {
         // TinyUSB task (handles incoming FFB packets and USB control)
         // This must run frequently, ideally >1000Hz (every <1ms)
         tud_task();
+        
+        // Debug serial commands
+        debug_serial_update();
 
         uint64_t now_us = time_us_64();
 
