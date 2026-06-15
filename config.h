@@ -49,7 +49,7 @@ constexpr int32_t MAX_HALF_ANGLE_DEG      = 540;
 constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_PER_REV) / 360;  // 12288
 
 // =========================================================================
-// PWM CONFIGURATION
+// MOTOR CONFIGURATION
 // =========================================================================
 // Target: 20kHz PWM
 // RP2040 system clock: 125 MHz
@@ -59,8 +59,18 @@ constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_P
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
 constexpr uint16_t FORWARD_MAX_PWM       = 6249;   // Software limit for FFB max force
 
+// Artificial boost to weak forces to make the wheel feel "punchier".
+// 100 = Linear (Accurate physics). >100 = Aggressive/Punchy (compresses dynamic range).
+// 250 means a 10% force from the game is physically amplified to feel like 25%.
+constexpr uint32_t FORCE_BOOST_PERCENT   = 100;
+
+// Fade in static friction compensation
+constexpr uint16_t FRICTION_FADE_FORCE   = 500; 
+constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
+constexpr uint16_t BACKDRIVE_FADE_FORCE  = 2500;
+
 // =========================================================================
-// BTS7960 MOTOR SAFETY
+// MOTOR SAFETY
 // =========================================================================
 
 // Dead-time between direction changes to prevent shoot-through (microseconds)
@@ -72,8 +82,8 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 // Lowered STALL_PWM_MAX to prevent 5A power supply hiccuping at the end stops
 constexpr uint16_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
 // Lowered threshold to match VELOCITY_FADE_START so motor can actually reach full power
-constexpr int32_t  FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
-constexpr int32_t  BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
+constexpr uint16_t FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
+constexpr uint16_t BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
 constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 
 // =========================================================================
@@ -81,8 +91,8 @@ constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 // =========================================================================
 // Soft speed limiter to protect the user from dangerously fast wheel spins.
 // Limits forward accelerating torque, but allows braking/damping forces.
-constexpr int32_t VELOCITY_FADE_START    = 15; // ~110 RPM. Start reducing max PWM.
-constexpr int32_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
+constexpr uint16_t VELOCITY_FADE_START    = 15; // ~110 RPM. Start reducing max PWM.
+constexpr uint16_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
 
 // =========================================================================
 // AS5600 SENSOR
@@ -109,7 +119,7 @@ constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 // Maximum physically possible delta between reads (raw counts).
 // Any delta exceeding this is a sensor glitch and must be discarded.
 // 30 counts/ms = ~220 RPM. The soft limiter kicks in at 19 counts/ms.
-constexpr int32_t  MAX_PHYSICAL_DELTA     = 30;
+constexpr int16_t  MAX_PHYSICAL_DELTA     = 30;
 
 // Number of consecutive bad magnet reads before motor is killed.
 // Allows the motor to coast through 1-2ms EMI-induced sensor glitches.
@@ -117,7 +127,7 @@ constexpr uint8_t  MAGNET_ERROR_TOLERANCE_FRAMES = 3;
 
 // Velocity EMA filter depth for motor governor noise suppression.
 // filtered += (raw - filtered) / N  — N=8 gives ~8ms time constant at 1ms sample rate.
-constexpr int32_t  VELOCITY_EMA_N         = 8;
+constexpr int8_t  VELOCITY_EMA_N         = 8;
 
 // =========================================================================
 // BUTTON READING (SPI)
@@ -156,11 +166,6 @@ constexpr uint8_t  LED_MIN_DISPLAY_CYCLES = 2;
 // =========================================================================
 
 constexpr uint8_t  MAX_EFFECTS           = 40;
-
-// Artificial boost to weak forces to make the wheel feel "punchier".
-// 100 = Linear (Accurate physics). >100 = Aggressive/Punchy (compresses dynamic range).
-// 250 means a 10% force from the game is physically amplified to feel like 25%.
-constexpr uint32_t FORCE_BOOST_PERCENT   = 100;
 
 // =========================================================================
 // CALIBRATION & PHYSICS TUNING

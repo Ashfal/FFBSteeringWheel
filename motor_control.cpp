@@ -57,6 +57,12 @@ void MotorControl::set_force(int32_t force, float velocity) {
 
     Direction dir = (force > 0) ? Direction::CW : Direction::CCW;
     uint32_t abs_force = (force > 0) ? force : -force;
+
+    if (FORCE_BOOST_PERCENT != 100){
+        // Artificial "punch" boost to compress dynamic range and make weak forces feel stronger
+         abs_force = (abs_force * FORCE_BOOST_PERCENT) / 100;
+    }
+
     if (abs_force > 10000) abs_force = 10000;
 
     // Determine the zero PWM offset based on direction
@@ -67,25 +73,21 @@ void MotorControl::set_force(int32_t force, float velocity) {
 
     // Scale the requested force (0..10000) into the active safe range (zero_pwm..safe_max_pwm)
     uint32_t pwm = 0;
-    if (safe_max_pwm > zero_pwm) {
-        uint32_t active_range = safe_max_pwm - zero_pwm;
-        
-        // Anti-chatter: fade in static friction compensation for forces under 1.5%
-        const uint32_t FRICTION_FADE_FORCE = 150; 
-        if (abs_force < FRICTION_FADE_FORCE) {
-            // Linearly ramp up to the zero_pwm threshold to avoid violent step-function chatter
-            pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;
-        } else {
-            // Artificial "punch" boost to compress dynamic range and make weak forces feel stronger
-            uint32_t boosted_force = (abs_force * FORCE_BOOST_PERCENT) / 100;
-            if (boosted_force > 10000) boosted_force = 10000;
-            
-            // Full static friction compensation + scaled force
-            pwm = zero_pwm + ((boosted_force * active_range) / 10000);
-        }
+
+    if (safe_max_pwm <= zero_pwm){
+        // Backdriving force scaling
+        pwm = (abs_force * safe_max_pwm) / BACKDRIVE_FADE_FORCE;
+    } else if (abs_force < FRICTION_FADE_FORCE){
+        // Static friction compensation
+        pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;
     } else {
-        pwm = safe_max_pwm;
+        // Dynamic force scaling, starting the scale at FRICTION_FADE_FORCE
+        uint32_t active_range = safe_max_pwm - zero_pwm;
+        pwm = zero_pwm + (((abs_force - FRICTION_FADE_FORCE) * active_range) / DYNAMIC_FORCE);
     }
+
+    // Ensure we never go above max safe PWM
+    if (pwm > safe_max_pwm) pwm = safe_max_pwm;
     
     // Apply directly, bypassing set_pwm since we already scaled to safe limits
     apply_pwm(static_cast<uint16_t>(pwm), dir);
