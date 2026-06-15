@@ -8,7 +8,8 @@ public:
     enum class Direction : uint8_t {
         OFF = 0,
         CW  = 1,
-        CCW = 2
+        CCW = 2,
+        BRAKE = 3
     };
 
     void init();
@@ -28,7 +29,7 @@ public:
     void stop() { apply_pwm(0, Direction::OFF); }
 
     // Active stop (short terminals)
-    void brake();
+    void brake() { apply_pwm(0, Direction::BRAKE); }
 
     // Applies the hardware limits for the current speed
     uint16_t get_safe_max_pwm(Direction dir, float velocity);

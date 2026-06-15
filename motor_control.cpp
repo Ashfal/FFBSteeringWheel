@@ -44,14 +44,6 @@ void MotorControl::init() {
     current_direction_ = Direction::OFF;
 }
 
-void MotorControl::brake() {
-    pwm_set_gpio_level(PIN_PWM_LPWM, 0);
-    pwm_set_gpio_level(PIN_PWM_RPWM, 0);
-    gpio_put(PIN_PWM_EN, 1);
-    // Note: Do not reset current_direction_ to OFF. This ensures we remember
-    // the last active direction so we can apply dead-time safely if it flips.
-}
-
 void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     cw_zero_pwm_ = cw_zero;
     ccw_zero_pwm_ = ccw_zero;
@@ -163,9 +155,6 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, float velocity) {
 }
 
 void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
-    // Only fire dead-time if we are changing to a DIFFERENT active direction.
-    // If current_direction_ is OFF (boot up), no dead-time is needed.
-    bool dir_changed = (dir != current_direction_ && current_direction_ != Direction::OFF);
 
     if (dir == Direction::OFF) {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
@@ -176,14 +165,14 @@ void MotorControl::apply_pwm(uint16_t pwm, Direction dir) {
         return;
     }
 
-    if (pwm == 0) {
+    if (dir == Direction::BRAKE) {
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);
         pwm_set_gpio_level(PIN_PWM_RPWM, 0);
-        gpio_put(PIN_PWM_EN, 1); // Keep EN high for active braking to prevent chip power-cycling jitter
+        gpio_put(PIN_PWM_EN, 1);
         return;
     }
 
-    if (dir_changed) {
+    if (dir != current_direction_) {
         // ---- Dead-Time Insertion ----
         // Before changing direction, turn both off and wait to prevent shoot-through
         pwm_set_gpio_level(PIN_PWM_LPWM, 0);

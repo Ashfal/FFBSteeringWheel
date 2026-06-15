@@ -167,8 +167,8 @@ FFBOutput FFBProcessor::calculate(int32_t position, float velocity,
 
     spin_unlock(effects.lock, irq);
 
-    // Apply device gain
-    total_force = (total_force * effects.device_gain) / 255;
+    // Apply device gain, reversing direction beecause DirectInput seems to go against HID spec
+    total_force = -(total_force * effects.device_gain) / 255;
 
     // ---- Overpower Detection (Dynamic Damping) ----
     if (total_force != 0 && velocity != 0.0f) {
