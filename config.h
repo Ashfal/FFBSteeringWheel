@@ -57,20 +57,19 @@ constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_P
 // Duty cycle range: 0 to PWM_WRAP (6249)
 
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
-constexpr uint16_t FORWARD_MAX_PWM       = 6249;   // Software limit for FFB max force
+constexpr uint16_t FORWARD_MAX_PWM       = 3124;   // Software limit for FFB max force
 
 // Artificial boost to weak forces to make the wheel feel "punchier".
 // 100 = Linear (Accurate physics). >100 = Aggressive/Punchy (compresses dynamic range).
-// 250 means a 10% force from the game is physically amplified to feel like 25%.
-constexpr uint32_t FORCE_BOOST_PERCENT   = 100;
+constexpr uint32_t FORCE_SCALE_PERCENT   = 100;
 
 // Fade in static friction compensation
-constexpr uint16_t FRICTION_FADE_FORCE   = 500; 
+constexpr uint16_t FRICTION_FADE_FORCE   = 200; 
 constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
-constexpr uint16_t BACKDRIVE_FADE_FORCE  = 2500;
+constexpr uint16_t BACKDRIVE_FADE_FORCE  = 1000;
 
 // =========================================================================
-// MOTOR SAFETY
+// MOTOR SAFETY (Stall Governor)
 // =========================================================================
 
 // Dead-time between direction changes to prevent shoot-through (microseconds)
@@ -79,10 +78,8 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 // Stall protection governor:
 // Differentiates between moving forward (with the motor) and backwards (against the motor).
 // Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
-// Lowered STALL_PWM_MAX to prevent 5A power supply hiccuping at the end stops
 constexpr uint16_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
-// Lowered threshold to match VELOCITY_FADE_START so motor can actually reach full power
-constexpr uint16_t FORWARD_VELOCITY_THRESHOLD   = 58;   // Raw counts/ms (~63% of free speed)
+constexpr uint16_t FORWARD_VELOCITY_THRESHOLD   = 37;   // Raw counts/ms
 constexpr uint16_t BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
 constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 
@@ -173,6 +170,9 @@ constexpr uint8_t  MAX_EFFECTS           = 40;
 
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
+// Flash calibration version
+constexpr uint32_t FLASH_DATA_VERSION    = 2;
+
 // Overpower Detection (Dynamic Damping)
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2 to 8 to prevent closed-loop oscillation caused by imperfect LUTs
@@ -181,11 +181,11 @@ constexpr int32_t VELOCITY_MARGIN        = 8;       // Safety margin (counts/ms)
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
 constexpr int32_t  CAL_FORCE_LEVELS[]    = {
+    200,
     500,
     1000,
     1500,
-    2000,
-    3000
+    2500,
 };
 constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = 5;
 

@@ -17,7 +17,6 @@
 // Typical size is 2MB. We use the very last 4KB sector.
 #define FLASH_TARGET_OFFSET (2048 * 1024 - FLASH_SECTOR_SIZE)
 #define MAGIC_NUMBER        0xFEEDFACE
-#define CURRENT_VERSION     1
 
 // Pointer to the memory-mapped flash location
 const FlashCalibrationData* flash_data_ptr = (const FlashCalibrationData*)(XIP_BASE + FLASH_TARGET_OFFSET);
@@ -43,7 +42,7 @@ bool FlashStorage::load(FlashCalibrationData& out_data) {
     if (out_data.magic != MAGIC_NUMBER) {
         return false;
     }
-    if (out_data.version != CURRENT_VERSION) {
+    if (out_data.version != FLASH_DATA_VERSION) {
         // Handle migration if needed in the future
         return false;
     }
@@ -63,7 +62,7 @@ bool FlashStorage::save(const FlashCalibrationData& data) {
     memcpy(p, &data, sizeof(FlashCalibrationData));
     
     p->magic = MAGIC_NUMBER;
-    p->version = CURRENT_VERSION;
+    p->version = FLASH_DATA_VERSION;
     p->crc32 = calculate_crc(*p);
 
     FlashCmdArgs args;

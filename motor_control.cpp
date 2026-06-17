@@ -26,7 +26,7 @@ void MotorControl::init() {
     // Ideally they are on the same slice (e.g. 6=3A, 7=3B).
     pwm_config config = pwm_get_default_config();
     pwm_config_set_clkdiv(&config, 1.0f); // 125MHz
-    pwm_config_set_wrap(&config, PWM_WRAP); // TOP = 6249
+    pwm_config_set_wrap(&config, PWM_WRAP);
 
     pwm_init(slice_l, &config, true);
     if (slice_l != slice_r) {
@@ -46,7 +46,9 @@ void MotorControl::init() {
 
 void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     cw_zero_pwm_ = cw_zero;
+    cw_active_range = FORWARD_MAX_PWM - cw_zero;
     ccw_zero_pwm_ = ccw_zero;
+    ccw_active_range = FORWARD_MAX_PWM - ccw_zero;
 }
 
 void MotorControl::set_force(int32_t force, float velocity) {
@@ -58,9 +60,9 @@ void MotorControl::set_force(int32_t force, float velocity) {
     Direction dir = (force > 0) ? Direction::CW : Direction::CCW;
     uint32_t abs_force = (force > 0) ? force : -force;
 
-    if (FORCE_BOOST_PERCENT != 100){
+    if (FORCE_SCALE_PERCENT != 100){
         // Artificial "punch" boost to compress dynamic range and make weak forces feel stronger
-         abs_force = (abs_force * FORCE_BOOST_PERCENT) / 100;
+         abs_force = (abs_force * FORCE_SCALE_PERCENT) / 100;
     }
 
     if (abs_force > 10000) abs_force = 10000;
@@ -82,7 +84,7 @@ void MotorControl::set_force(int32_t force, float velocity) {
         pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;
     } else {
         // Dynamic force scaling, starting the scale at FRICTION_FADE_FORCE
-        uint32_t active_range = safe_max_pwm - zero_pwm;
+        uint16_t active_range = (dir == Direction::CW) ? cw_active_range : ccw_active_range;
         pwm = zero_pwm + (((abs_force - FRICTION_FADE_FORCE) * active_range) / DYNAMIC_FORCE);
     }
 
@@ -144,8 +146,6 @@ void MotorControl::set_pwm(uint16_t pwm, Direction dir, float velocity) {
         stop();
         return;
     }
-
-    if (pwm > FORWARD_MAX_PWM) pwm = FORWARD_MAX_PWM;
 
     uint16_t max_allowed_pwm = get_safe_max_pwm(dir, velocity);
 

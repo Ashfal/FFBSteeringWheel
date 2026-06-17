@@ -36,7 +36,9 @@ public:
 
 private:
     uint16_t cw_zero_pwm_ = 0;
+    uint16_t cw_active_range = FORWARD_MAX_PWM;
     uint16_t ccw_zero_pwm_ = 0;
+    uint16_t ccw_active_range = FORWARD_MAX_PWM;
     Direction current_direction_ = Direction::OFF;
 
     void apply_pwm(uint16_t pwm, Direction dir);

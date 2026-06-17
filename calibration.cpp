@@ -30,7 +30,7 @@ static bool block_read_sensor(I2CDMA& i2c, AS5600Parser& parser) {
 
 // Find minimum PWM to overcome static friction
 static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser) {
-    uint16_t test_pwm = 0;
+    uint16_t test_pwm = PWM_WRAP / 10; //start at 10% PWM
     
     // Ensure we are stopped
     motor.brake();
@@ -45,7 +45,7 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         motor.set_pwm(test_pwm, dir, 0.0f);
         
         // Wait briefly for movement
-        sleep_ms(20);
+        sleep_ms(50);
         
         block_read_sensor(i2c, parser);
         int32_t pos = parser.get_position();
@@ -53,8 +53,8 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         int32_t delta = pos - start_pos;
         if (delta < 0) delta = -delta;
 
-        // If we moved at least 5 counts, static friction is broken
-        if (delta >= 5) {
+        // If we moved at least 2 counts, static friction is broken
+        if (delta >= 2) {
             break;
         }
     }
