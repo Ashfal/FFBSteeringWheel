@@ -96,7 +96,10 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
         bool is_recovery = (error_flags_ & SensorState::ERR_I2C_WATCHDOG);
 
         // ---- Filter Impossible Physics Jumps ----
-        if (delta > MAX_PHYSICAL_DELTA || delta < -MAX_PHYSICAL_DELTA) {
+        int32_t allowed_delta = static_cast<int32_t>(MAX_PHYSICAL_DELTA * dt_ms);
+        if (allowed_delta < MAX_PHYSICAL_DELTA) allowed_delta = MAX_PHYSICAL_DELTA;
+
+        if (delta > allowed_delta || delta < -allowed_delta) {
             if (is_recovery) {
                 error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
                 return false;

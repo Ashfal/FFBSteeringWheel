@@ -64,7 +64,7 @@ constexpr uint16_t FORWARD_MAX_PWM       = 3124;   // Software limit for FFB max
 constexpr uint32_t FORCE_SCALE_PERCENT   = 100;
 
 // Fade in static friction compensation
-constexpr uint16_t FRICTION_FADE_FORCE   = 200; 
+constexpr uint16_t FRICTION_FADE_FORCE   = 150; 
 constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
 constexpr uint16_t BACKDRIVE_FADE_FORCE  = 1000;
 
@@ -176,21 +176,22 @@ constexpr uint32_t FLASH_DATA_VERSION    = 2;
 // Overpower Detection (Dynamic Damping)
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2 to 8 to prevent closed-loop oscillation caused by imperfect LUTs
-constexpr int32_t VELOCITY_MARGIN        = 8;       // Safety margin (counts/ms) for imperfect LUT readings
+constexpr int32_t VELOCITY_MARGIN        = 5;       // Safety margin (counts/ms) for imperfect LUT readings
 
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
 constexpr int32_t  CAL_FORCE_LEVELS[]    = {
-    200,
     500,
+    800,
     1000,
     1500,
     2500,
 };
 constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = 5;
 
-// Minimum sweep distance during calibration (180 degrees in raw counts)
-constexpr int32_t  CAL_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 2;  // 4096
+// Minimum sweep distance during calibration
+constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 16;
+constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
 
 // =========================================================================
 // I2C DMA / WATCHDOG TIMING

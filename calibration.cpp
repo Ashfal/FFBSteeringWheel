@@ -40,8 +40,6 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
     int32_t start_pos = parser.get_position();
 
     while (test_pwm < STALL_PWM_MAX) {
-        test_pwm += 10;
-        // Do not use fake velocity; just test the stall torque safely up to the hardware limit
         motor.set_pwm(test_pwm, dir, 0.0f);
         
         // Wait briefly for movement
@@ -53,10 +51,20 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         int32_t delta = pos - start_pos;
         if (delta < 0) delta = -delta;
 
-        // If we moved at least 2 counts, static friction is broken
-        if (delta >= 2) {
-            break;
+        float vel = parser.get_velocity();
+        if (vel < 0) vel = -vel;
+
+        // If we moved, static friction is broken
+        if (vel > 0.0f) {
+            // Now prove it can hold said movement
+            if (delta > CAL_ZERO_MIN_SWEEP_COUNTS) break;
+            else continue;
+        } else {
+            //if it stops we reset the position and start over
+            start_pos = pos;
         }
+
+        test_pwm += 10;
     }
     
     motor.brake();
@@ -84,6 +92,8 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
     uint64_t start_time = time_us_64();
     
     while (true) {
+        if (time_us_64() - start_time > 5000000) break; // 5s timeout
+
         sleep_ms(2); // ~500Hz sampling
         if (!block_read_sensor(i2c, parser)) continue;
         
@@ -100,13 +110,10 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
         samples++;
         
         // Stop conditions
-        uint64_t elapsed = time_us_64() - start_time;
         int32_t distance = pos - start_pos;
         if (!is_cw) distance = -distance;
         
-        if (elapsed > 5000000) break; // 5s timeout
-        if (distance > CAL_MIN_SWEEP_COUNTS) break; // Travelled enough distance
-        
+        if (distance > CAL_FORCE_MIN_SWEEP_COUNTS) break; // Travelled enough distance
     }
     
     motor.brake();
