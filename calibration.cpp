@@ -54,11 +54,11 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         int32_t delta = pos - start_pos;
         if (delta < 0) delta = -delta;
 
-        float vel = parser.get_velocity();
+        int32_t vel = parser.get_velocity();
         if (vel < 0) vel = -vel;
 
         // If we moved, static friction is broken
-        if (vel > 0.0f) {
+        if (vel > 0) {
             // Now prove it can hold said movement
             if (delta > CAL_ZERO_MIN_SWEEP_COUNTS) break;
             else continue;

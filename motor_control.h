@@ -20,10 +20,10 @@ public:
     // Set the target PWM and direction.
     // Handles dead-time, friction compensation, and stall protection.
     // Set physical hardware PWM (-10000 to +10000 scaled internally to FORWARD_MAX_PWM)
-    void set_force(int32_t force, float velocity);
+    void set_force(int32_t force, int32_t velocity);
 
     // Set raw PWM for calibration, with stall governor logic
-    void set_pwm(uint16_t pwm, Direction dir, float velocity);
+    void set_pwm(uint16_t pwm, Direction dir, int32_t velocity);
 
     // Immediate stop (coast)
     void stop() { apply_pwm(0, Direction::OFF); }
@@ -32,7 +32,7 @@ public:
     void brake() { apply_pwm(0, Direction::BRAKE); }
 
     // Applies the hardware limits for the current speed
-    uint16_t get_safe_max_pwm(Direction dir, float velocity);
+    uint16_t get_safe_max_pwm(Direction dir, int32_t velocity);
 
 private:
     uint16_t cw_zero_pwm_ = 0;

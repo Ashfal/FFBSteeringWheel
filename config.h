@@ -45,7 +45,7 @@ constexpr int32_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 // Physical wheel range: 1080° total → ±540° from center
 // 540° = 540/360 * 8192 = 12288 raw counts from center
 constexpr int32_t MAX_WHEEL_ANGLE_DEG     = 1080;
-constexpr int32_t MAX_HALF_ANGLE_DEG      = 540;
+constexpr int32_t MAX_HALF_ANGLE_DEG      = MAX_WHEEL_ANGLE_DEG / 2;
 constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_PER_REV) / 360;  // 12288
 
 // =========================================================================
@@ -78,9 +78,9 @@ constexpr uint16_t DEAD_TIME_US           = 50;
 // Stall protection governor:
 // Differentiates between moving forward (with the motor) and backwards (against the motor).
 // Tuned for 12V 775 DC motor to limit current to a maximum of 5.5A
-constexpr uint16_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
-constexpr uint16_t FORWARD_VELOCITY_THRESHOLD   = 37;   // Raw counts/ms
-constexpr uint16_t BACKWARDS_VELOCITY_THRESHOLD = 24;   // Raw counts/ms
+constexpr int32_t STALL_PWM_MAX                = 1874; // ~30% duty cycle
+constexpr int32_t FORWARD_VELOCITY_THRESHOLD_CPS   = 36950;   // Raw counts/sec
+constexpr int32_t BACKWARDS_VELOCITY_THRESHOLD_CPS = 24000;   // Raw counts/sec
 constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 
 // =========================================================================
@@ -88,8 +88,8 @@ constexpr uint16_t BACKWARDS_PWM_MAX            = 0;
 // =========================================================================
 // Soft speed limiter to protect the user from dangerously fast wheel spins.
 // Limits forward accelerating torque, but allows braking/damping forces.
-constexpr uint16_t VELOCITY_FADE_START    = 15; // ~110 RPM. Start reducing max PWM.
-constexpr uint16_t MAX_SAFE_VELOCITY      = 19; // ~140 RPM. PWM reduced to 0.
+constexpr int32_t VELOCITY_FADE_START_CPS    = 15000; // ~110 RPM. Start reducing max PWM.
+constexpr int32_t MAX_SAFE_VELOCITY_CPS      = 19000; // ~140 RPM. PWM reduced to 0.
 
 // =========================================================================
 // AS5600 SENSOR
@@ -115,8 +115,8 @@ constexpr uint8_t  AS5600_STATUS_MD      = 0x20;    // Magnet detected
 
 // Maximum physically possible delta between reads (raw counts).
 // Any delta exceeding this is a sensor glitch and must be discarded.
-// 30 counts/ms = ~220 RPM. The soft limiter kicks in at 19 counts/ms.
-constexpr int16_t  MAX_PHYSICAL_DELTA     = 30;
+// 30000 counts/sec = ~220 RPM. The soft limiter kicks in at 19000 counts/sec.
+constexpr int32_t  MAX_PHYSICAL_DELTA_CPS     = 30000;
 
 // Number of consecutive bad magnet reads before motor is killed.
 // Allows the motor to coast through 1-2ms EMI-induced sensor glitches.
@@ -124,7 +124,7 @@ constexpr uint8_t  MAGNET_ERROR_TOLERANCE_FRAMES = 3;
 
 // Velocity EMA filter depth for motor governor noise suppression.
 // filtered += (raw - filtered) / N  — N=8 gives ~8ms time constant at 1ms sample rate.
-constexpr int8_t  VELOCITY_EMA_N         = 8;
+constexpr int32_t VELOCITY_EMA_N         = 8;
 
 // =========================================================================
 // BUTTON READING (SPI)
@@ -175,8 +175,8 @@ constexpr uint32_t FLASH_DATA_VERSION    = 2;
 
 // Overpower Detection (Dynamic Damping)
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
-// Increased margin from 2 to 8 to prevent closed-loop oscillation caused by imperfect LUTs
-constexpr int32_t VELOCITY_MARGIN        = 5;       // Safety margin (counts/ms) for imperfect LUT readings
+// Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
+constexpr int32_t VELOCITY_MARGIN_CPS        = 5000;       // Safety margin (counts/sec) for imperfect LUT readings
 
 // Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
 // Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)

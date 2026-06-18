@@ -240,11 +240,9 @@ static void cmd_status() {
     strcpy(p, "\r\n");
     cdc_print(buf);
 
-    // Velocity: print as integer (counts/ms * 1000 for readability)
-    float vel = g_dbg_state->sensor.wheel_velocity.load();
-    int32_t vel_x1000 = static_cast<int32_t>(vel * 1000.0f);
-    p = buf; strcpy(p, "Velocity (x1000): "); p += 18;
-    p = int_to_str(vel_x1000, p);
+    int32_t vel_cps = g_dbg_state->sensor.wheel_velocity.load();
+    p = buf; strcpy(p, "Velocity (cps): "); p += 16;
+    p = int_to_str(vel_cps, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 

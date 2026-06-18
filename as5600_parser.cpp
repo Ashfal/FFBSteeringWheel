@@ -13,8 +13,8 @@
 
 void AS5600Parser::init() {
     accumulated_position_ = 0;
-    velocity_ = 0.0f;
-    filtered_velocity_ = 0.0f;
+    velocity_cps_ = 0;
+    filtered_velocity_cps_ = 0;
     turn_count_ = 0;
     last_raw_angle_ = 0;
     first_read_ = true;
@@ -81,8 +81,6 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
     int32_t delta = 0;
 
     if (dt_us > 0) {
-        float dt_ms = static_cast<float>(dt_us) / 1000.0f;
-
         // Determine shortest path for wrapped values
         delta = static_cast<int32_t>(raw_angle) - static_cast<int32_t>(last_raw_angle_);
         if (delta > 2048) {
@@ -93,14 +91,12 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
             wraps = 1;
         }
 
-        bool is_recovery = (error_flags_ & SensorState::ERR_I2C_WATCHDOG);
+        // Calculate instantaneous velocity to check for physically impossible jumps
+        int32_t inst_velocity_cps = static_cast<int32_t>((static_cast<int64_t>(delta) * 1000000) / dt_us);
 
         // ---- Filter Impossible Physics Jumps ----
-        int32_t allowed_delta = static_cast<int32_t>(MAX_PHYSICAL_DELTA * dt_ms);
-        if (allowed_delta < MAX_PHYSICAL_DELTA) allowed_delta = MAX_PHYSICAL_DELTA;
-
-        if (delta > allowed_delta || delta < -allowed_delta) {
-            if (is_recovery) {
+        if (inst_velocity_cps > MAX_PHYSICAL_DELTA_CPS || inst_velocity_cps < -MAX_PHYSICAL_DELTA_CPS) {
+            if (error_flags_ & SensorState::ERR_I2C_WATCHDOG) { //is recovery
                 error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
                 return false;
             }
@@ -113,7 +109,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
 
             // Impossible jump (likely I2C glitch)
             // Recover gracefully by dead-reckoning the delta using the last known FILTERED velocity.
-            delta = static_cast<int32_t>(filtered_velocity_ * dt_ms);
+            delta = static_cast<int32_t>((static_cast<int64_t>(filtered_velocity_cps_) * dt_us) / 1000000);
             
             // Extrapolate what the raw angle should have been, accounting for potential wraps
             int32_t total_raw = static_cast<int32_t>(last_raw_angle_) + delta;
@@ -130,7 +126,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
             raw_angle = static_cast<uint16_t>(total_raw);
         } else {
             desync_counter_ = 0;
-            velocity_ = static_cast<float>(delta) / dt_ms;
+            velocity_cps_ = inst_velocity_cps;
         }
     }
 
@@ -139,13 +135,13 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
         zero_count_++;
         // If physically stopped for multiple reads (3ms), kill velocity immediately to prevent EMA lag from tricking the stall governor
         if (zero_count_ >= 3) {
-            filtered_velocity_ = 0.0f;
+            filtered_velocity_cps_ = 0;
         } else {
-            filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
+            filtered_velocity_cps_ += (velocity_cps_ - filtered_velocity_cps_) / VELOCITY_EMA_N;
         }
     } else {
         zero_count_ = 0;
-        filtered_velocity_ += (velocity_ - filtered_velocity_) / static_cast<float>(VELOCITY_EMA_N);
+        filtered_velocity_cps_ += (velocity_cps_ - filtered_velocity_cps_) / VELOCITY_EMA_N;
     }
     
     turn_count_ += wraps;

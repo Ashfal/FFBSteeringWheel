@@ -51,7 +51,7 @@ void MotorControl::set_calibration_zero(uint16_t cw_zero, uint16_t ccw_zero) {
     ccw_active_range = FORWARD_MAX_PWM - ccw_zero;
 }
 
-void MotorControl::set_force(int32_t force, float velocity) {
+void MotorControl::set_force(int32_t force, int32_t velocity) {
     if (force == 0) {
         stop();
         return;
@@ -95,44 +95,44 @@ void MotorControl::set_force(int32_t force, float velocity) {
     apply_pwm(static_cast<uint16_t>(pwm), dir);
 }
 
-uint16_t MotorControl::get_safe_max_pwm(Direction dir, float velocity) {
+uint16_t MotorControl::get_safe_max_pwm(Direction dir, int32_t velocity) {
     if (dir == Direction::OFF) return 0;
 
-    bool is_forward = (dir == Direction::CW && velocity > 0.0f) || (dir == Direction::CCW && velocity < 0.0f);
-    bool is_stalled = (velocity == 0.0f);
-    float abs_velocity = (velocity >= 0.0f) ? velocity : -velocity;
+    bool is_forward = (dir == Direction::CW && velocity > 0) || (dir == Direction::CCW && velocity < 0);
+    bool is_stalled = (velocity == 0);
+    int32_t abs_velocity = (velocity >= 0) ? velocity : -velocity;
     
     uint16_t max_allowed_pwm = FORWARD_MAX_PWM;
     
     if (is_stalled) {
         max_allowed_pwm = STALL_PWM_MAX;
     } else if (is_forward) {
-        if (abs_velocity < static_cast<float>(FORWARD_VELOCITY_THRESHOLD)) {
+        if (abs_velocity < FORWARD_VELOCITY_THRESHOLD_CPS) {
             // Linearly increase from STALL_PWM_MAX to FORWARD_MAX_PWM
-            float range = static_cast<float>(FORWARD_MAX_PWM - STALL_PWM_MAX);
-            max_allowed_pwm = STALL_PWM_MAX + static_cast<uint16_t>((abs_velocity * range) / static_cast<float>(FORWARD_VELOCITY_THRESHOLD));
+            int32_t range = FORWARD_MAX_PWM - STALL_PWM_MAX;
+            max_allowed_pwm = STALL_PWM_MAX + static_cast<uint16_t>((abs_velocity * range) / FORWARD_VELOCITY_THRESHOLD_CPS);
         } else {
             max_allowed_pwm = FORWARD_MAX_PWM;
         }
 
         // --- Hardware Safety: Max Velocity Fading (Protection Envelope) ---
         // Fades out motor assistance if wheel is spinning too fast, protecting driver
-        if (abs_velocity > static_cast<float>(VELOCITY_FADE_START)) {
-            if (abs_velocity >= static_cast<float>(MAX_SAFE_VELOCITY)) {
+        if (abs_velocity > VELOCITY_FADE_START_CPS) {
+            if (abs_velocity >= MAX_SAFE_VELOCITY_CPS) {
                 max_allowed_pwm = 0;
             } else {
-                float overspeed = abs_velocity - static_cast<float>(VELOCITY_FADE_START);
-                float fade_range = static_cast<float>(MAX_SAFE_VELOCITY - VELOCITY_FADE_START);
-                float fade_factor = 1.0f - (overspeed / fade_range);
-                max_allowed_pwm = static_cast<uint16_t>(max_allowed_pwm * fade_factor);
+                int32_t overspeed = abs_velocity - VELOCITY_FADE_START_CPS;
+                int32_t fade_range = MAX_SAFE_VELOCITY_CPS - VELOCITY_FADE_START_CPS;
+                int32_t fade_factor_num = fade_range - overspeed;
+                max_allowed_pwm = static_cast<uint16_t>((static_cast<uint32_t>(max_allowed_pwm) * fade_factor_num) / fade_range);
             }
         }
     } else {
         // Moving backwards (user fighting the motor)
-        if (abs_velocity < static_cast<float>(BACKWARDS_VELOCITY_THRESHOLD)) {
+        if (abs_velocity < BACKWARDS_VELOCITY_THRESHOLD_CPS) {
             // Linearly decrease from STALL_PWM_MAX to BACKWARDS_PWM_MAX
-            float range = static_cast<float>(STALL_PWM_MAX - BACKWARDS_PWM_MAX);
-            max_allowed_pwm = STALL_PWM_MAX - static_cast<uint16_t>((abs_velocity * range) / static_cast<float>(BACKWARDS_VELOCITY_THRESHOLD));
+            int32_t range = STALL_PWM_MAX - BACKWARDS_PWM_MAX;
+            max_allowed_pwm = STALL_PWM_MAX - static_cast<uint16_t>((abs_velocity * range) / BACKWARDS_VELOCITY_THRESHOLD_CPS);
         } else {
             max_allowed_pwm = BACKWARDS_PWM_MAX;
         }
@@ -141,7 +141,7 @@ uint16_t MotorControl::get_safe_max_pwm(Direction dir, float velocity) {
     return max_allowed_pwm;
 }
 
-void MotorControl::set_pwm(uint16_t pwm, Direction dir, float velocity) {
+void MotorControl::set_pwm(uint16_t pwm, Direction dir, int32_t velocity) {
     if (pwm == 0 || dir == Direction::OFF) {
         stop();
         return;

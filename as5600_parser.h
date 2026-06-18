@@ -12,7 +12,7 @@ public:
     bool update(uint8_t status_reg, uint16_t raw_angle);
 
     int32_t get_position() const { return accumulated_position_; }
-    float get_velocity() const { return filtered_velocity_; }
+    int32_t get_velocity() const { return filtered_velocity_cps_; }
     int32_t get_absolute_raw() const { return (turn_count_ * 4096) + last_raw_angle_; }
     uint8_t get_error_flags() const { return error_flags_; }
 
@@ -28,8 +28,8 @@ private:
     bool     first_read_ = true;
 
     // Velocity calculation
-    float    velocity_ = 0.0f;            // Raw instantaneous counts/ms (used for dead-reckoning)
-    float    filtered_velocity_ = 0.0f;   // EMA-smoothed counts/ms (used by motor governor)
+    int32_t  velocity_cps_ = 0;           // Raw instantaneous counts/sec (used for dead-reckoning)
+    int32_t  filtered_velocity_cps_ = 0;  // EMA-smoothed counts/sec (used by motor governor)
     uint8_t  zero_count_ = 0;             // Consecutive zero-velocity reads
     uint64_t last_time_us_ = 0;
 
