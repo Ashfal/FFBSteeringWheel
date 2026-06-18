@@ -244,10 +244,10 @@ uint8_t const* tud_hid_descriptor_report_cb(uint8_t instance) {
 
 static const char* string_desc_arr[] = {
     (const char[]){ 0x09, 0x04 },   // 0: Supported language (English 0x0409)
-    "FFBWheel",                      // 1: Manufacturer
+    "Arheisel",                      // 1: Manufacturer
     "FFB Steering Wheel",            // 2: Product
     nullptr,                         // 3: Serial (uses board unique ID)
-    "FFBWheel Debug",                // 4: CDC interface string
+    "FFBSerial Debug",                // 4: CDC interface string
 };
 
 uint16_t const* tud_descriptor_string_cb(uint8_t index, uint16_t langid) {

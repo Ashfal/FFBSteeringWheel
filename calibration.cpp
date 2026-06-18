@@ -273,6 +273,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
         data.cw_speed[i] = state.cal_luts.cw_speed[i];
         data.ccw_speed[i] = state.cal_luts.ccw_speed[i];
     }
+    data.wheel_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG;
 
     // Use core1_running = false since Core 1 isn't running yet
     bool save_success = flash.save(data, false);

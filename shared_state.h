@@ -172,6 +172,8 @@ struct SharedState {
     StatusState      led_status;
 
     std::atomic<int32_t> center_offset{0}; // Read by Core 1 on boot
+    std::atomic<int32_t> max_half_angle_counts{12288};
+    std::atomic<int32_t> wheel_angle_deg{1080};
 
     // Button state (Core 0 only writes, Core 0 only reads for USB)
     std::atomic<uint16_t> buttons{0};

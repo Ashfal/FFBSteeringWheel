@@ -52,17 +52,17 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 // =========================================================================
 
 FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
-                                  EffectState& effects) {
+                                  EffectState& effects, int32_t max_half_angle_counts) {
     FFBOutput out;
     out.force = 0;
 
     // ---- Electronic End-Stop (Early Exit) ----
     // If wheel is beyond physical limit, apply a proportional reverse spring
     // and skip ALL other effect processing.
-    if (position > MAX_HALF_ANGLE_COUNTS || position < -MAX_HALF_ANGLE_COUNTS) {
+    if (position > max_half_angle_counts || position < -max_half_angle_counts) {
         int32_t overshoot = (position > 0)
-            ? (position - MAX_HALF_ANGLE_COUNTS)
-            : (position + MAX_HALF_ANGLE_COUNTS);
+            ? (position - max_half_angle_counts)
+            : (position + max_half_angle_counts);
 
         // Proportional spring: force = -overshoot scaled to 10000 range
         // Scaling by 256 makes it extremely aggressive (hits a brick wall within ~11 degrees)
@@ -125,7 +125,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         int32_t angle_ratio = int_sin(dir_angle);
         int32_t force = 0;
 
-        int32_t scaled_pos = (position * 10000) / MAX_HALF_ANGLE_COUNTS;
+        int32_t scaled_pos = (position * 10000) / max_half_angle_counts;
         int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY_CPS;
         if (scaled_vel > 10000) scaled_vel = 10000;
         else if (scaled_vel < -10000) scaled_vel = -10000;

@@ -42,11 +42,9 @@ constexpr uint8_t PIN_LED             = 22;
 constexpr int32_t ENCODER_COUNTS_PER_REV  = 4096;
 constexpr int32_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 
-// Physical wheel range: 1080° total → ±540° from center
-// 540° = 540/360 * 8192 = 12288 raw counts from center
-constexpr int32_t MAX_WHEEL_ANGLE_DEG     = 1080;
-constexpr int32_t MAX_HALF_ANGLE_DEG      = MAX_WHEEL_ANGLE_DEG / 2;
-constexpr int32_t MAX_HALF_ANGLE_COUNTS   = (MAX_HALF_ANGLE_DEG * WHEEL_COUNTS_PER_REV) / 360;  // 12288
+// Physical wheel range default: 1080° total → ±540° from center
+constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1080;
+
 
 // =========================================================================
 // MOTOR CONFIGURATION
@@ -172,7 +170,13 @@ constexpr uint8_t  MAX_EFFECTS           = 40;
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
 // Flash calibration version
-constexpr uint32_t FLASH_DATA_VERSION    = 2;
+constexpr uint32_t FLASH_DATA_VERSION    = 3;
+
+// Inter-core commands
+constexpr uint32_t CORE1_CMD_SUSPEND     = 0x55555555;
+constexpr uint32_t CORE1_CMD_RESUME      = 0xAAAAAAAA;
+constexpr uint32_t CORE1_CMD_ACK         = 0x11111111;
+
 
 // Overpower Detection (Dynamic Damping)
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition

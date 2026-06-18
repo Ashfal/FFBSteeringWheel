@@ -13,6 +13,8 @@ public:
     // Calibration: set min/max ADC values for scaling
     void set_calibration(uint16_t accel_min, uint16_t accel_max,
                          uint16_t brake_min, uint16_t brake_max);
+    void get_calibration(uint16_t& accel_min, uint16_t& accel_max,
+                         uint16_t& brake_min, uint16_t& brake_max) const;
 
 private:
     uint16_t trimmed_mean_filter(const uint16_t* history, uint8_t depth);

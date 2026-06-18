@@ -47,7 +47,7 @@ int main() {
     usb_hid_init(g_shared_state);
     
     // Init Debug Serial console
-    debug_serial_init(g_shared_state);
+    debug_serial_init(g_shared_state, g_pedals, g_flash);
 
     // Load flash data
     FlashCalibrationData cal_data;
@@ -57,6 +57,11 @@ int main() {
         g_shared_state.center_offset.store(cal_data.center_position);
         g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
                                  cal_data.brake_min, cal_data.brake_max);
+                                 
+        int32_t half_angle_deg = cal_data.wheel_angle_deg / 2;
+        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
+        g_shared_state.max_half_angle_counts.store(max_half_angle_counts);
+        g_shared_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
                                  
         g_shared_state.cal_luts.cw_zero_pwm = cal_data.cw_zero_pwm;
         g_shared_state.cal_luts.ccw_zero_pwm = cal_data.ccw_zero_pwm;
@@ -70,6 +75,11 @@ int main() {
     } else {
         // Provide safe defaults
         g_pedals.set_calibration(100, 4000, 100, 4000);
+        
+        int32_t half_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG / 2;
+        int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
+        g_shared_state.max_half_angle_counts.store(max_half_angle_counts);
+        g_shared_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
 
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
         debug_log_error(SystemStatus::FlashCalMissing);

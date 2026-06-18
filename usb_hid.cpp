@@ -94,11 +94,12 @@ void usb_hid_send_input_report(SharedState& state) {
     report.reportId = 0x01;
     report.buttons  = state.buttons.load();
     int32_t pos = state.sensor.wheel_position.load();
-    if (pos > MAX_HALF_ANGLE_COUNTS) pos = MAX_HALF_ANGLE_COUNTS;
-    else if (pos < -MAX_HALF_ANGLE_COUNTS) pos = -MAX_HALF_ANGLE_COUNTS;
+    int32_t max_half_angle_counts = state.max_half_angle_counts.load();
+    if (pos > max_half_angle_counts) pos = max_half_angle_counts;
+    else if (pos < -max_half_angle_counts) pos = -max_half_angle_counts;
 
     // Scale to the HID descriptor's expected logical min/max (-32767 to 32767)
-    pos = (pos * 32767) / MAX_HALF_ANGLE_COUNTS;
+    pos = (pos * 32767) / max_half_angle_counts;
 
     report.x        = static_cast<int16_t>(pos);
     report.accel    = static_cast<int16_t>(state.pedal_accel.load());

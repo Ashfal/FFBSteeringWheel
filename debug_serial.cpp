@@ -1,11 +1,7 @@
 // =========================================================================
-// Debug Serial Console — CDC ACM Single-Char Command Interface
+// Debug Serial Console — CDC ACM Line-Buffered CLI
 // =========================================================================
 // Provides a simple debug console over USB CDC for diagnostics.
-// Commands:
-//   'c' - Print flash calibration data
-//   's' - Print live status (position, velocity, pedals, AGC)
-//   'e' - Print and clear the error log
 // =========================================================================
 
 #include "debug_serial.h"
@@ -13,9 +9,12 @@
 #include "config.h"
 #include "shared_state.h"
 #include "flash_storage.h"
+#include "pedal_reader.h"
 #include "pico/time.h"
+#include "pico/multicore.h"
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
 
 // =========================================================================
 // Error Log — Lock-free ring buffer (single writer from ISR, single reader)
@@ -32,13 +31,21 @@ static volatile uint8_t g_error_log_write_idx = 0;
 static uint8_t g_error_log_read_idx = 0;
 
 static SharedState* g_dbg_state = nullptr;
+static PedalReader* g_dbg_pedals = nullptr;
+static FlashStorage* g_dbg_flash = nullptr;
+
+static char g_line_buf[64];
+static uint8_t g_line_len = 0;
+static bool g_prompt_printed = false;
 
 // =========================================================================
 // Public API
 // =========================================================================
 
-void debug_serial_init(SharedState& state) {
+void debug_serial_init(SharedState& state, PedalReader& pedals, FlashStorage& flash) {
     g_dbg_state = &state;
+    g_dbg_pedals = &pedals;
+    g_dbg_flash = &flash;
     memset(g_error_log, 0, sizeof(g_error_log));
     g_error_log_write_idx = 0;
     g_error_log_read_idx = 0;
@@ -132,79 +139,60 @@ static char* uint_to_str(uint32_t val, char* buf) {
     return buf;
 }
 
-static char* uint64_to_str(uint64_t val, char* buf) {
-    char tmp[21];
-    int i = 0;
-    if (val == 0) {
-        tmp[i++] = '0';
-    } else {
-        while (val > 0) {
-            tmp[i++] = '0' + (val % 10);
-            val /= 10;
-        }
-    }
-    for (int j = i - 1; j >= 0; j--) {
-        *buf++ = tmp[j];
-    }
-    *buf = '\0';
-    return buf;
-}
-
 // =========================================================================
-// Command: 'c' — Print calibration data
+// Command: Print live calibration data
 // =========================================================================
 
 static void cmd_calibration() {
-    if (!g_dbg_state) {
+    if (!g_dbg_state || !g_dbg_pedals) {
         cdc_print("ERR: No state\r\n");
-        return;
-    }
-
-    FlashStorage flash;
-    FlashCalibrationData data;
-    bool valid = flash.load(data);
-
-    if (!valid) {
-        cdc_print("=== CALIBRATION: No valid flash data ===\r\n");
         return;
     }
 
     char buf[64];
     char* p;
 
-    cdc_print("=== CALIBRATION DATA ===\r\n");
+    cdc_print("=== LIVE CALIBRATION DATA ===\r\n");
 
     p = buf; strcpy(p, "Center: "); p += 8;
-    p = int_to_str(data.center_position, p);
+    p = int_to_str(g_dbg_state->center_offset.load(), p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+    
+    p = buf; strcpy(p, "Wheel Angle (deg): "); p += 19;
+    p = int_to_str(g_dbg_state->wheel_angle_deg.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
+    uint16_t amin, amax, bmin, bmax;
+    g_dbg_pedals->get_calibration(amin, amax, bmin, bmax);
+
     p = buf; strcpy(p, "Accel: "); p += 7;
-    p = uint_to_str(data.accel_min, p); *p++ = '-';
-    p = uint_to_str(data.accel_max, p);
+    p = uint_to_str(amin, p); *p++ = '-';
+    p = uint_to_str(amax, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "Brake: "); p += 7;
-    p = uint_to_str(data.brake_min, p); *p++ = '-';
-    p = uint_to_str(data.brake_max, p);
+    p = uint_to_str(bmin, p); *p++ = '-';
+    p = uint_to_str(bmax, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "CW Zero PWM: "); p += 13;
-    p = uint_to_str(data.cw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_luts.cw_zero_pwm, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "CCW Zero PWM: "); p += 14;
-    p = uint_to_str(data.ccw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_luts.ccw_zero_pwm, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     cdc_print("CW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(data.cw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_luts.cw_speed[i], p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -213,7 +201,7 @@ static void cmd_calibration() {
     cdc_print("CCW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(data.ccw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_luts.ccw_speed[i], p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -221,7 +209,46 @@ static void cmd_calibration() {
 }
 
 // =========================================================================
-// Command: 's' — Print live status
+// Command: Save calibration data
+// =========================================================================
+
+static void cmd_save_calibration() {
+    if (!g_dbg_state || !g_dbg_pedals || !g_dbg_flash) return;
+    
+    cdc_print("Suspending Core 1...\r\n");
+    multicore_fifo_push_blocking(CORE1_CMD_SUSPEND);
+    uint32_t ack = multicore_fifo_pop_blocking();
+    if (ack != CORE1_CMD_ACK) {
+        cdc_print("ERR: Core 1 did not ACK suspend\r\n");
+        return;
+    }
+
+    cdc_print("Saving to flash...\r\n");
+    FlashCalibrationData data;
+    data.center_position = g_dbg_state->center_offset.load();
+    data.wheel_angle_deg = g_dbg_state->wheel_angle_deg.load();
+    g_dbg_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
+    data.cw_zero_pwm = g_dbg_state->cal_luts.cw_zero_pwm;
+    data.ccw_zero_pwm = g_dbg_state->cal_luts.ccw_zero_pwm;
+    for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+        data.cw_speed[i] = g_dbg_state->cal_luts.cw_speed[i];
+        data.ccw_speed[i] = g_dbg_state->cal_luts.ccw_speed[i];
+    }
+
+    // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute 
+    // puts Core 1 into a lockout state cleanly before pausing Core 0 interrupts.
+    bool ok = g_dbg_flash->save(data, true);
+
+    cdc_print(ok ? "Save OK\r\n" : "Save FAILED\r\n");
+
+    cdc_print("Resuming Core 1...\r\n");
+    multicore_fifo_push_blocking(CORE1_CMD_RESUME);
+    multicore_fifo_pop_blocking(); // Wait for ACK
+    cdc_print("Done.\r\n");
+}
+
+// =========================================================================
+// Command: Print live status
 // =========================================================================
 
 static void cmd_status() {
@@ -248,7 +275,6 @@ static void cmd_status() {
 
     p = buf; strcpy(p, "Buttons: 0x"); p += 11;
     uint16_t btns = g_dbg_state->buttons.load();
-    // Simple hex output
     const char hex[] = "0123456789ABCDEF";
     *p++ = hex[(btns >> 12) & 0xF];
     *p++ = hex[(btns >> 8) & 0xF];
@@ -303,7 +329,7 @@ static void cmd_status() {
 }
 
 // =========================================================================
-// Command: 'e' — Print and clear error log
+// Command: Print and clear error log
 // =========================================================================
 
 static const char* error_name(SystemStatus code) {
@@ -361,20 +387,148 @@ static void cmd_errors() {
 }
 
 // =========================================================================
+// Command Parser
+// =========================================================================
+
+static void print_help() {
+    cdc_print("Commands:\r\n");
+    cdc_print("  s               - Print live status\r\n");
+    cdc_print("  c               - Print live calibration data\r\n");
+    cdc_print("  e               - Print error log\r\n");
+    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccwz, center, angle)\r\n");
+    cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cw, ccw; idx: 0-4)\r\n");
+    cdc_print("  cw              - Write live calibration data to flash\r\n");
+    cdc_print("  exit            - Hide prompt\r\n");
+    cdc_print("  help            - Print this help\r\n");
+}
+
+static void process_command(char* cmd) {
+    char* argv[5];
+    int argc = 0;
+    char* p = cmd;
+    while (*p) {
+        while (*p == ' ') p++;
+        if (!*p) break;
+        argv[argc++] = p;
+        if (argc >= 5) break;
+        while (*p && *p != ' ') p++;
+        if (*p) {
+            *p = '\0';
+            p++;
+        }
+    }
+
+    if (argc == 0) return;
+
+    if (strcmp(argv[0], "s") == 0) {
+        cmd_status();
+    } else if (strcmp(argv[0], "c") == 0) {
+        cmd_calibration();
+    } else if (strcmp(argv[0], "e") == 0) {
+        cmd_errors();
+    } else if (strcmp(argv[0], "help") == 0) {
+        print_help();
+    } else if (strcmp(argv[0], "exit") == 0) {
+        cdc_print("Disconnected.\r\n");
+        g_prompt_printed = false;
+    } else if (strcmp(argv[0], "cw") == 0) {
+        cmd_save_calibration();
+    } else if (strcmp(argv[0], "cs") == 0) {
+        if (argc >= 3) {
+            const char* var = argv[1];
+            if (strcmp(var, "cw") == 0 || strcmp(var, "ccw") == 0) {
+                if (argc == 4) {
+                    int idx = atoi(argv[2]);
+                    int32_t val = atoi(argv[3]);
+                    if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT) {
+                        if (strcmp(var, "cw") == 0) g_dbg_state->cal_luts.cw_speed[idx] = val;
+                        else g_dbg_state->cal_luts.ccw_speed[idx] = val;
+                        cdc_print("LUT updated.\r\n");
+                    } else {
+                        cdc_print("ERR: Invalid index\r\n");
+                    }
+                } else {
+                    cdc_print("ERR: Usage: cs <lut> <idx> <val>\r\n");
+                    print_help();
+                }
+            } else {
+                int32_t val = atoi(argv[2]);
+                if (strcmp(var, "cwz") == 0) g_dbg_state->cal_luts.cw_zero_pwm = val;
+                else if (strcmp(var, "ccwz") == 0) g_dbg_state->cal_luts.ccw_zero_pwm = val;
+                else if (strcmp(var, "center") == 0) g_dbg_state->center_offset.store(val);
+                else if (strcmp(var, "angle") == 0) {
+                    g_dbg_state->wheel_angle_deg.store(val);
+                    int32_t half_deg = val / 2;
+                    int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
+                    g_dbg_state->max_half_angle_counts.store(max_half_angle_counts);
+                } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
+                           strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
+                    uint16_t amin, amax, bmin, bmax;
+                    g_dbg_pedals->get_calibration(amin, amax, bmin, bmax);
+                    if (strcmp(var, "amin") == 0) amin = val;
+                    else if (strcmp(var, "amax") == 0) amax = val;
+                    else if (strcmp(var, "bmin") == 0) bmin = val;
+                    else if (strcmp(var, "bmax") == 0) bmax = val;
+                    g_dbg_pedals->set_calibration(amin, amax, bmin, bmax);
+                } else {
+                    cdc_print("ERR: Unknown variable\r\n");
+                    print_help();
+                    return;
+                }
+                cdc_print("Updated.\r\n");
+            }
+        } else {
+            cdc_print("ERR: Usage: cs <var> <val>\r\n");
+            print_help();
+        }
+    } else {
+        cdc_print("ERR: Unknown command.\r\n");
+        print_help();
+    }
+}
+
+// =========================================================================
 // Main update — called from Core 0 main loop
 // =========================================================================
 
 void debug_serial_update() {
-    if (!tud_cdc_connected() || !tud_cdc_available()) return;
+    if (!tud_cdc_connected()) {
+        g_prompt_printed = false;
+        g_line_len = 0;
+        return;
+    }
+
+    if (!g_prompt_printed) {
+        cdc_print("\r\nffbserial: ");
+        g_prompt_printed = true;
+    }
+
+    if (!tud_cdc_available()) return;
 
     char c = (char)tud_cdc_read_char();
 
-    switch (c) {
-        case 'c': case 'C': cmd_calibration(); break;
-        case 's': case 'S': cmd_status(); break;
-        case 'e': case 'E': cmd_errors(); break;
-        default:
-            cdc_print("Commands: [c]alibration [s]tatus [e]rrors\r\n");
-            break;
+    if (c == '\r' || c == '\n') {
+        cdc_print("\r\n");
+        g_line_buf[g_line_len] = '\0';
+        if (g_line_len > 0) {
+            process_command(g_line_buf);
+            g_line_len = 0;
+        }
+        if (g_prompt_printed) {
+            cdc_print("ffbserial: ");
+        }
+    } else if (c == '\b' || c == 0x7F) { // Backspace or DEL
+        if (g_line_len > 0) {
+            g_line_len--;
+            cdc_print("\b \b");
+        }
+    } else if (g_line_len < sizeof(g_line_buf) - 1) {
+        // Allow alphanumeric, space, minus
+        if ((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || 
+            (c >= '0' && c <= '9') || c == ' ' || c == '-') {
+            g_line_buf[g_line_len++] = c;
+            char echo[2] = {c, '\0'};
+            cdc_print(echo);
+        }
     }
 }

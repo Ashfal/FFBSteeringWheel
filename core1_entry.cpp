@@ -108,7 +108,8 @@ static void dma_isr() {
     // 2. FFB Processing
     FFBOutput out = g_ffb.calculate(g_parser.get_position(),
                                     g_parser.get_velocity(),
-                                    g_state->ffb);
+                                    g_state->ffb,
+                                    g_state->max_half_angle_counts.load());
 
     // 3. Motor Control
     g_motor.set_force(out.force, g_parser.get_velocity());
@@ -186,6 +187,7 @@ void core1_main() {
     g_motor.set_calibration_zero(g_state->cal_luts.cw_zero_pwm, g_state->cal_luts.ccw_zero_pwm);
 
     core1_init_interrupts();
+    multicore_lockout_victim_init();
 
     g_last_loop_time_us = time_us_64();
 
@@ -231,6 +233,46 @@ void core1_main() {
                     g_state->led_status.clear(SystemStatus::I2CWatchdogFired);
                     in_error_state = false;
                 }
+            }
+        }
+
+        // Check for FIFO commands from Core 0
+        if (multicore_fifo_rvalid()) {
+            uint32_t cmd = multicore_fifo_pop_blocking();
+            if (cmd == CORE1_CMD_SUSPEND) {
+                // Cancel the 1ms alarm to pause DMA
+                alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+                
+                // Wait for any active I2C transfer to finish? Or just let it finish.
+                // We're about to spin, which lets the ISR finish if it fires.
+                
+                // Acknowledge suspension
+                multicore_fifo_push_blocking(CORE1_CMD_ACK);
+                
+                // Spin until resume command is received.
+                // Interrupts are still enabled here, so we CAN be locked out by flash_safe_execute!
+                while (true) {
+                    if (multicore_fifo_rvalid()) {
+                        uint32_t resume_cmd = multicore_fifo_pop_blocking();
+                        if (resume_cmd == CORE1_CMD_RESUME) {
+                            break;
+                        }
+                    }
+                    tight_loop_contents();
+                }
+
+                // Resumed! Reset watchdog state
+                g_last_loop_time_us = time_us_64();
+                
+                // Re-arm the 1ms alarm
+                g_timer_alarm = alarm_pool_add_alarm_in_us(
+                    g_alarm_pool, I2C_READ_INTERVAL_US, timer_callback, nullptr, true);
+                
+                // Start a fresh read
+                g_i2c.start_read();
+
+                // Send resume ACK
+                multicore_fifo_push_blocking(CORE1_CMD_ACK);
             }
         }
 
