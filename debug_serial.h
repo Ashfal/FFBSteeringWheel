@@ -6,7 +6,7 @@
 struct SharedState;
 
 // Initialize the debug serial module
-void debug_serial_init(SharedState* state);
+void debug_serial_init(SharedState& state);
 
 // Call from Core 0 main loop — checks for incoming CDC bytes and responds
 void debug_serial_update();

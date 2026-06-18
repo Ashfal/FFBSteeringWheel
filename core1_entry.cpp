@@ -15,7 +15,6 @@
 #include "as5600_parser.h"
 #include "ffb_processor.h"
 #include "i2c_dma.h"
-#include "calibration.h"
 #include "debug_serial.h"
 #include "hardware/irq.h"
 #include "hardware/timer.h"
@@ -40,8 +39,8 @@ static volatile uint64_t g_last_loop_time_us = 0;
 // Transient EMI tolerance counter (file scope so both branches can access it)
 static uint8_t g_magnet_error_count = 0;
 
-void core1_set_shared_state(SharedState* state) {
-    g_state = state;
+void core1_set_shared_state(SharedState& state) {
+    g_state = &state;
 }
 
 // =========================================================================
@@ -179,30 +178,6 @@ void core1_main() {
     g_parser.init();
     g_motor.init();
 
-    // Wait for boot or calibration command from Core 0
-    uint32_t cal_cmd = multicore_fifo_pop_blocking();
-    
-    if (cal_cmd == 1) {
-        // CMD_RUN_FLASH_CAL
-        
-        // Run the motor and encoder calibration routine (now handles center capture internally)
-        run_calibration(g_state, g_i2c, g_motor, g_parser);
-        
-        // Acknowledge sweeps complete
-        std::atomic_thread_fence(std::memory_order_release);
-        multicore_fifo_push_blocking(1);
-        
-        // Core 1 MUST initialize as a lockout victim before halting,
-        // so that Core 0 can safely use flash_safe_execute!
-        multicore_lockout_victim_init();
-        
-        // Halt. Core 0 will handle pedal cal and reboot.
-        while (true) {
-            tight_loop_contents();
-        }
-    }
-    
-    // CMD_BOOT_NORMAL
     // Apply flash calibration center
     g_parser.set_center(g_state->center_offset.load());
     g_ffb.init(&g_state->cal_luts);

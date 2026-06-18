@@ -25,8 +25,8 @@ public:
     // Load data from flash. Returns true if data was valid.
     bool load(FlashCalibrationData& out_data);
 
-    // Save data to flash. Uses flash_safe_execute for multicore safety.
-    bool save(const FlashCalibrationData& data);
+    // Save data to flash. Uses flash_safe_execute for multicore safety if core1_running is true.
+    bool save(const FlashCalibrationData& data, bool core1_running = true);
 
 private:
     uint32_t calculate_crc(const FlashCalibrationData& data) const;

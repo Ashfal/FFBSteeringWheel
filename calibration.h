@@ -1,8 +1,10 @@
 #pragma once
 #include "shared_state.h"
-#include "i2c_dma.h"
-#include "motor_control.h"
-#include "as5600_parser.h"
+#include "button_reader.h"
+#include "pedal_reader.h"
+#include "led_controller.h"
+#include "flash_storage.h"
 
-// Runs the full flash calibration logic (captures center, then runs sweeps)
-void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS5600Parser& parser);
+// Runs the full flash calibration logic (captures center, sweeps motor, calibrates pedals, saves to flash, reboots)
+// Executed strictly on Core 0 before Core 1 is launched.
+void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash);

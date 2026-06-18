@@ -8,6 +8,9 @@
 #include "calibration.h"
 #include "config.h"
 #include "pico/time.h"
+#include "i2c_dma.h"
+#include "motor_control.h"
+#include "as5600_parser.h"
 
 // Helper to do a blocking I2C read during calibration
 // Returns false if the read times out or the sensor reports an error.
@@ -129,8 +132,20 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
     return (max_vel >= 0) ? max_vel : -max_vel;
 }
 
-void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS5600Parser& parser) {
-    if (!state) return;
+#include "hardware/watchdog.h"
+
+void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash) {
+
+    // Instantiate hardware for calibration locally on the stack
+    I2CDMA i2c;
+    AS5600Parser parser;
+    MotorControl motor;
+
+    i2c.init();
+    parser.init();
+    motor.init();
+
+    state.led_status.set(SystemStatus::MotorSweepsActive);
     
     // 1. Grab absolute raw center
     // Do a blocking read to get the raw angle safely
@@ -144,18 +159,23 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     }
     
     if (!initial_read_ok) {
-        state->cal_luts.valid = false;
-        return;
+        state.cal_luts.valid = false;
+        // If sensor is dead, we can't continue safely
+        state.led_status.set(SystemStatus::FlashWriteFailed);
+        while (true) {
+            led.update();
+            sleep_ms(1);
+        }
     }
     
     int32_t raw_center = parser.get_absolute_raw() & 0x0FFF;
     
     // Save to shared state and parser
-    state->center_offset.store(raw_center);
+    state.center_offset.store(raw_center);
     parser.init();
     parser.set_center(raw_center);
 
-    CalibrationLUTs& luts = state->cal_luts;
+    CalibrationLUTs& luts = state.cal_luts;
     luts.valid = false;
     
     // Read initial state
@@ -183,4 +203,84 @@ void run_calibration(SharedState* state, I2CDMA& i2c, MotorControl& motor, AS560
     // If not, we could apply a smoothing pass here, but for now we just accept it.
     
     luts.valid = true;
+    state.led_status.clear(SystemStatus::MotorSweepsActive);
+
+    // 3. Pedal Calibration Phase
+    state.led_status.set(SystemStatus::PedalCalActive);
+
+    // Let's just track min/max for pedals
+    uint16_t accel_min = 4095, accel_max = 0;
+    uint16_t brake_min = 4095, brake_max = 0;
+
+    // Wait for user to release all buttons first
+    while (buttons.get_buttons() != 0) {
+        buttons.update();
+        led.update();
+        sleep_ms(1);
+    }
+
+    // Phase 2: User pumps pedals. Long press cal button again to save.
+    uint64_t press_time_us = 0;
+    bool save_triggered = false;
+    
+    while (!save_triggered) {
+        buttons.update();
+        pedals.update();
+        led.update();
+
+        // Read raw compensated values so calibration matches regular operation.
+        uint16_t a_raw = 0;
+        uint16_t b_raw = 0;
+        pedals.read_raw_compensated(a_raw, b_raw);
+
+        if (a_raw < accel_min) accel_min = a_raw;
+        if (a_raw > accel_max) accel_max = a_raw;
+        if (b_raw < brake_min) brake_min = b_raw;
+        if (b_raw > brake_max) brake_max = b_raw;
+
+        if (buttons.get_buttons() != 0) {
+            if (press_time_us == 0) {
+                press_time_us = time_us_64();
+            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                save_triggered = true;
+            }
+        } else {
+            press_time_us = 0;
+        }
+        sleep_ms(1);
+    }
+
+    // Save everything to flash
+    FlashCalibrationData data;
+    data.center_position = state.center_offset.load();
+    data.accel_min = accel_min;
+    data.accel_max = accel_max;
+    data.brake_min = brake_min;
+    data.brake_max = brake_max;
+    
+    data.cw_zero_pwm = state.cal_luts.cw_zero_pwm;
+    data.ccw_zero_pwm = state.cal_luts.ccw_zero_pwm;
+    for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
+        data.cw_speed[i] = state.cal_luts.cw_speed[i];
+        data.ccw_speed[i] = state.cal_luts.ccw_speed[i];
+    }
+
+    // Use core1_running = false since Core 1 isn't running yet
+    bool save_success = flash.save(data, false);
+    state.led_status.clear(SystemStatus::PedalCalActive);
+
+    if (!save_success) {
+        state.led_status.set(SystemStatus::FlashWriteFailed);
+        // Do not reboot; just stay here and flash the error code
+        while (true) {
+            led.update();
+            sleep_ms(10);
+        }
+    }
+
+    // Reboot to apply new flash settings cleanly
+    watchdog_reboot(0, 0, 1);
+    while (true) {
+        tight_loop_contents();
+    }
 }

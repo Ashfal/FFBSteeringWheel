@@ -8,4 +8,4 @@ void core1_main();
 void core1_init_interrupts();
 
 // Set the global shared state pointer for Core 1
-void core1_set_shared_state(SharedState* state);
+void core1_set_shared_state(SharedState& state);

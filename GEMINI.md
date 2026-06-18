@@ -46,33 +46,32 @@ Core 0 (main.cpp)                    Core 1 (core1_entry.cpp)
 ### Boot Sequence
 
 ```
-Core 0 (main.cpp)                           Core 1 (core1_entry.cpp)
 ──────────────────                           ──────────────────────
 1. board_init, stdio_init_all                (waiting to be launched)
 2. Init LED, buttons, pedals, USB HID
 3. Load flash calibration data
-4. Launch Core 1 ──────────────────────────→ 5. Init I2C (+ AS5600 CONF), motor, parser
-6. Wait for button press:                    7. Block on FIFO (waiting for command)
-   - Short press → CMD_BOOT_NORMAL (0)
-   - Long press / no flash → CMD_RUN_FLASH_CAL (1)
+4. Wait for button press:                    
+   - Short press → Normal Boot
+   - Long press / no flash → Run Calibration 
 
-If CMD_BOOT_NORMAL:
-   Core 0 sends 0 via FIFO ───────────────→ 8. Apply flash center offset
-                                              9. Init FFBProcessor with CalibrationLUTs
-                                             10. Apply friction compensation to motor
-                                             11. Enable DMA IRQ, create alarm pool
-                                             12. Start 1ms alarm + first I2C read
-                                             13. Enter watchdog loop
+If Normal Boot:
+   Core 0 launches Core 1 ────────────────→ 5. Init I2C, motor, parser
+                                            6. Apply flash center offset
+                                            7. Init FFBProcessor
+                                            8. Apply friction compensation
+                                            9. Enable DMA IRQ, create alarm
+                                           10. Start 1ms alarm + first I2C read
+                                           11. Enter watchdog loop
 
-If CMD_RUN_FLASH_CAL:
-   Core 0 sends 1 via FIFO ───────────────→ 8. Capture center, run motor sweeps
-   Core 0 waits for Ack                     9. Ack via FIFO, then halt
+If Run Calibration:
+   Core 0 instantiates I2C, motor, parser
+   Core 0 runs motor sweeps and captures center
    Core 0 runs pedal calibration
    Core 0 saves all data to flash
    Core 0 triggers watchdog reboot
 ```
 
-**Critical:** DMA interrupts must NOT be enabled before calibration completes. The calibration routine uses synchronous polling of the DMA completion flag, and the ISR would consume those flags.
+**Critical:** Core 1 is not launched during the calibration phase. Core 0 handles the entire calibration locally since it has full memory and peripheral access. After saving data, it reboots into normal mode.
 
 ### Core 0 Main Loop Timing
 
@@ -102,6 +101,7 @@ Convert all human-readable concepts (degrees, RPM, percentages) into `constexpr`
 - **Core 0 → Core 1:** Use hardware spinlocks (`spin_lock_blocking` / `spin_unlock`) for multi-field structs like `EffectState`.
 - **Inter-core commands:** Use Pico SDK FIFO queues (`multicore_fifo_push/pop_blocking`).
 - **LED status (both cores):** Use `compare_exchange_weak` for priority-based atomic updates.
+- **Pass by Reference:** Always pass `SharedState` (and other guaranteed-to-exist objects) by reference (`SharedState&`) instead of by pointer (`SharedState*`) to enforce safety and avoid null checks.
 
 ### 3. Global Configuration (`config.h`)
 
@@ -168,7 +168,7 @@ All tunable parameters live in `config.h`. This includes:
 10. **LED visibility guarantees:** Transient status codes are guaranteed to flash for at least `LED_MIN_DISPLAY_CYCLES` complete sequences before a self-clearing condition can turn the LED back to solid ON.
 11. **Glitch filter with dead-reckoning:** If the AS5600 reports an impossible position jump (delta > `MAX_PHYSICAL_DELTA`), the parser extrapolates position from the last known velocity instead of accepting the bad data. After 10 consecutive impossible jumps, a fatal `EncoderDesync` error stops the motor and halts the I2C loop.
 12. **Recovery desync detection:** On the first read after an I2C watchdog recovery, if the delta exceeds `MAX_PHYSICAL_DELTA`, a fatal `DesyncAfterRecovery` error is raised rather than trusting potentially stale data.
-13. **Flash writes use `flash_safe_execute`** to safely pause Core 1 and prevent XIP conflicts during erase/program operations.
+13. **Flash writes** are performed exclusively during the calibration phase when Core 1 is NOT running. The `flash_safe_execute` wrapper is used with a dynamic check, bypassing the multicore locks if Core 1 is inactive.
 
 ## Timing Constraints
 

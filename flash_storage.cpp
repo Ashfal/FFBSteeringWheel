@@ -53,7 +53,7 @@ bool FlashStorage::load(FlashCalibrationData& out_data) {
     return true;
 }
 
-bool FlashStorage::save(const FlashCalibrationData& data) {
+bool FlashStorage::save(const FlashCalibrationData& data, bool core1_running) {
     // We need a page-aligned buffer to write to flash
     uint8_t page_buf[FLASH_PAGE_SIZE] = {0};
     
@@ -70,10 +70,17 @@ bool FlashStorage::save(const FlashCalibrationData& data) {
     args.data = page_buf;
     args.length = FLASH_PAGE_SIZE;
 
-    // Use flash_safe_execute to pause Core 1 and safely write to flash
-    int result = flash_safe_execute(flash_write_wrapper, &args, 50);
-    
-    return (result == PICO_OK);
+    if (core1_running) {
+        // Use flash_safe_execute to pause Core 1 and safely write to flash
+        int result = flash_safe_execute(flash_write_wrapper, &args, 50);
+        return (result == PICO_OK);
+    } else {
+        // Core 1 is not running, safe to write directly with interrupts disabled
+        uint32_t ints = save_and_disable_interrupts();
+        flash_write_wrapper(&args);
+        restore_interrupts(ints);
+        return true;
+    }
 }
 
 // Simple CRC32 implementation

@@ -25,6 +25,7 @@
 #include "led_controller.h"
 #include "flash_storage.h"
 #include "debug_serial.h"
+#include "calibration.h"
 
 // Instantiate the global shared state
 SharedState g_shared_state;
@@ -36,103 +37,6 @@ static ButtonReader g_buttons;
 static PedalReader  g_pedals;
 static LEDController g_led;
 static FlashStorage g_flash;
-
-void handle_flash_calibration_loop() {
-    // 1. Tell Core 1 to run motor sweeps and find center
-    g_shared_state.led_status.set(SystemStatus::MotorSweepsActive);
-    multicore_fifo_push_blocking(1); // CMD_RUN_FLASH_CAL
-    
-    // Wait for Ack (sweeps finished) while keeping the LED blinking
-    while (!multicore_fifo_rvalid()) {
-        g_led.update();
-        sleep_ms(1);
-    }
-    multicore_fifo_pop_blocking(); // Consume the Ack
-    std::atomic_thread_fence(std::memory_order_acquire);
-    
-    g_shared_state.led_status.clear(SystemStatus::MotorSweepsActive);
-
-    // 2. Pedal Calibration Phase
-    g_shared_state.led_status.set(SystemStatus::PedalCalActive);
-
-    // Let's just track min/max for pedals
-    uint16_t accel_min = 4095, accel_max = 0;
-    uint16_t brake_min = 4095, brake_max = 0;
-
-    // Wait for user to release all buttons first
-    while (g_buttons.get_buttons() != 0) {
-        g_buttons.update();
-        g_led.update();
-        sleep_ms(1);
-    }
-
-    // Phase 2: User pumps pedals. Long press cal button again to save.
-    uint64_t press_time_us = 0;
-    bool save_triggered = false;
-    
-    while (!save_triggered) {
-        g_buttons.update();
-        g_pedals.update();
-        g_led.update();
-
-        // Read raw compensated values so calibration matches regular operation.
-        uint16_t a_raw = 0;
-        uint16_t b_raw = 0;
-        g_pedals.read_raw_compensated(a_raw, b_raw);
-
-        if (a_raw < accel_min) accel_min = a_raw;
-        if (a_raw > accel_max) accel_max = a_raw;
-        if (b_raw < brake_min) brake_min = b_raw;
-        if (b_raw > brake_max) brake_max = b_raw;
-
-        if (g_buttons.get_buttons() != 0) {
-            if (press_time_us == 0) {
-                press_time_us = time_us_64();
-            } else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
-                save_triggered = true;
-            }
-        } else {
-            press_time_us = 0;
-        }
-        sleep_ms(1);
-    }
-
-    // Save everything to flash
-    FlashCalibrationData data;
-    data.magic = 0xFEEDFACE;
-    data.version = 1;
-    data.center_position = g_shared_state.center_offset.load();
-    data.accel_min = accel_min;
-    data.accel_max = accel_max;
-    data.brake_min = brake_min;
-    data.brake_max = brake_max;
-    
-    data.cw_zero_pwm = g_shared_state.cal_luts.cw_zero_pwm;
-    data.ccw_zero_pwm = g_shared_state.cal_luts.ccw_zero_pwm;
-    for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = g_shared_state.cal_luts.cw_speed[i];
-        data.ccw_speed[i] = g_shared_state.cal_luts.ccw_speed[i];
-    }
-
-    bool save_success = g_flash.save(data);
-    g_shared_state.led_status.clear(SystemStatus::PedalCalActive);
-
-    if (!save_success) {
-        g_shared_state.led_status.set(SystemStatus::FlashWriteFailed);
-        debug_log_error(SystemStatus::FlashWriteFailed);
-        // Do not reboot; just stay here and flash the error code
-        while (true) {
-            g_led.update();
-            sleep_ms(1);
-        }
-    }
-
-    // Reboot to apply new flash settings cleanly
-    watchdog_reboot(0, 0, 1);
-    while (true) {
-        tight_loop_contents();
-    }
-}
 
 
 int main() {
@@ -150,7 +54,7 @@ int main() {
     usb_hid_init(g_shared_state);
     
     // Init Debug Serial console
-    debug_serial_init(&g_shared_state);
+    debug_serial_init(g_shared_state);
 
     // Load flash data
     FlashCalibrationData cal_data;
@@ -174,15 +78,6 @@ int main() {
         g_pedals.set_calibration(100, 4000, 100, 4000);
     }
 
-    // Pass shared state to Core 1
-    core1_set_shared_state(&g_shared_state);
-
-    // Launch Core 1
-    multicore_launch_core1(core1_main);
-
-    // Wait for Core 1 to be ready for the calibration command
-    // (Core 1 blocks on FIFO immediately)
-    
     // Wait for user to press button to boot normally or start flash cal
     if (has_flash) {
         g_shared_state.led_status.set(SystemStatus::BootWait);
@@ -225,7 +120,7 @@ int main() {
                 break;
             }
         }
-        sleep_ms(1);
+        sleep_us(BUTTON_UPDATE_INTERVAL_US);
     }
 
     g_shared_state.led_status.clear(SystemStatus::BootWait);
@@ -246,12 +141,14 @@ int main() {
     }
 
     if (long_press || !has_flash) {
-        // Long press OR no flash data: force Flash calibration
-        handle_flash_calibration_loop();
+        // Long press OR no flash data: force Flash calibration on Core 0
+        run_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
+        // run_calibration handles reboot, so this never returns
     } else {
         // Short press: Normal Boot
-        multicore_fifo_push_blocking(0); // CMD_BOOT_NORMAL
-        // We do NOT wait for Ack on Boot Normal, Core 1 just starts running immediately.
+        // Pass shared state to Core 1 and launch it
+        core1_set_shared_state(g_shared_state);
+        multicore_launch_core1(core1_main);
     }
 
     // Init TinyUSB

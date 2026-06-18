@@ -37,8 +37,8 @@ static SharedState* g_dbg_state = nullptr;
 // Public API
 // =========================================================================
 
-void debug_serial_init(SharedState* state) {
-    g_dbg_state = state;
+void debug_serial_init(SharedState& state) {
+    g_dbg_state = &state;
     memset(g_error_log, 0, sizeof(g_error_log));
     g_error_log_write_idx = 0;
     g_error_log_read_idx = 0;
