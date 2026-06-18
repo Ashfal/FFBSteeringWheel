@@ -28,25 +28,18 @@
 #include "calibration.h"
 
 // Instantiate the global shared state
-SharedState g_shared_state;
-
-// Link LED status to the global controller pointer
-extern StatusState* g_led_status_state_ptr;
+static SharedState g_shared_state;
 
 static ButtonReader g_buttons;
 static PedalReader  g_pedals;
 static LEDController g_led;
 static FlashStorage g_flash;
 
-
 int main() {
     board_init();
     stdio_init_all();
 
-    // Link LED status
-    g_led_status_state_ptr = &g_shared_state.led_status;
-
-    g_led.init();
+    g_led.init(g_shared_state);
     g_buttons.init();
     g_pedals.init();
 
@@ -59,6 +52,7 @@ int main() {
     // Load flash data
     FlashCalibrationData cal_data;
     bool has_flash = g_flash.load(cal_data);
+
     if (has_flash) {
         g_shared_state.center_offset.store(cal_data.center_position);
         g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
@@ -71,25 +65,37 @@ int main() {
             g_shared_state.cal_luts.ccw_speed[i] = cal_data.ccw_speed[i];
         }
         g_shared_state.cal_luts.valid = true;
-    } else {
-        g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
-        debug_log_error(SystemStatus::FlashCalMissing);
-        // Provide safe defaults
-        g_pedals.set_calibration(100, 4000, 100, 4000);
-    }
 
-    // Wait for user to press button to boot normally or start flash cal
-    if (has_flash) {
         g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {
+        // Provide safe defaults
+        g_pedals.set_calibration(100, 4000, 100, 4000);
+
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
         debug_log_error(SystemStatus::FlashCalMissing);
     }
     
-    bool long_press = false;
-    bool bootloader_mode = false;
+    // Preload true button state
+    for (int i = 0; i < DEBOUNCE_READS; i++) {
+        g_buttons.update();
+        sleep_us(BUTTON_UPDATE_INTERVAL_US);
+    }
+
+    // Wait for user to release all buttons first
+    // We flash the LED to indicate that there is a button pressed or stuck
+    if (g_buttons.get_buttons() != 0) {
+        g_shared_state.led_status.set(SystemStatus::RapidFlash);
+        while (g_buttons.get_buttons() != 0) {
+            g_buttons.update();
+            g_led.update();
+            sleep_us(BUTTON_UPDATE_INTERVAL_US);
+        }
+        g_shared_state.led_status.clear(SystemStatus::RapidFlash);
+    }
+
     uint64_t press_time_us = 0;
-    int max_buttons_pressed = 0;
+    bool long_press = false;
+    int num_pressed = 0;
 
     while (true) {
         g_buttons.update();
@@ -99,26 +105,16 @@ int main() {
         if (buttons_state != 0) {
             if (press_time_us == 0) {
                 press_time_us = time_us_64();
-                max_buttons_pressed = 0;
             }
-            int num_pressed = __builtin_popcount(buttons_state);
-            if (num_pressed > max_buttons_pressed) {
-                max_buttons_pressed = num_pressed;
-            }
-            
-            if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
-                if (max_buttons_pressed >= 2) {
-                    bootloader_mode = true;
-                } else {
-                    long_press = true;
-                }
+            else if ((time_us_64() - press_time_us) / 1000 > LONG_PRESS_MS) {
+                long_press = true;
+                num_pressed = __builtin_popcount(buttons_state);
                 break;
             }
-        } else {
-            if (press_time_us > 0) {
-                // Short press released
-                break;
-            }
+        } 
+        else if (press_time_us > 0) { // Short press released
+            if (has_flash) break;
+            else press_time_us = 0;
         }
         sleep_us(BUTTON_UPDATE_INTERVAL_US);
     }
@@ -126,30 +122,28 @@ int main() {
     g_shared_state.led_status.clear(SystemStatus::BootWait);
     g_shared_state.led_status.clear(SystemStatus::FlashCalMissing);
 
-    if (bootloader_mode) {
-        // Flash LED quickly to indicate bootloader transition
-        for (int i = 0; i < 10; i++) {
-            gpio_put(PIN_LED, 1);
-            sleep_ms(50);
-            gpio_put(PIN_LED, 0);
-            sleep_ms(50);
+    if (long_press) {
+        if (num_pressed == 2) { //Bootloader Mode
+            // Flash LED quickly to indicate bootloader transition
+            g_shared_state.led_status.set(SystemStatus::RapidFlash);
+            for (int i = 0; i < 20; i++) {
+                g_led.update();
+                sleep_ms(50);
+            }
+            reset_usb_boot(1u << PIN_LED, 0);
+            while (true) {
+                tight_loop_contents();
+            }
         }
-        reset_usb_boot(1u << PIN_LED, 0);
-        while (true) {
-            tight_loop_contents();
+        else if (num_pressed == 1) {
+            run_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
+            // run_calibration handles reboot, so this never returns
         }
     }
 
-    if (long_press || !has_flash) {
-        // Long press OR no flash data: force Flash calibration on Core 0
-        run_calibration(g_shared_state, g_buttons, g_pedals, g_led, g_flash);
-        // run_calibration handles reboot, so this never returns
-    } else {
-        // Short press: Normal Boot
-        // Pass shared state to Core 1 and launch it
-        core1_set_shared_state(g_shared_state);
-        multicore_launch_core1(core1_main);
-    }
+    // Pass shared state to Core 1 and launch it
+    core1_set_shared_state(g_shared_state);
+    multicore_launch_core1(core1_main);
 
     // Init TinyUSB
     tusb_init();

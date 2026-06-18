@@ -128,6 +128,10 @@ All tunable parameters live in `config.h`. This includes:
 
 **Any changes to the overall architecture of the project must be reflected in this file (`GEMINI.md`).** This includes changes to data flow, boot sequence, safety invariants, timing, shared state structures, new files, or removed files. This file must always accurately describe the current state of the firmware.
 
+### 7. Global Includes and Defines
+
+**No `#include` or `#define` statements in the middle of files.** All preprocessor directives must be placed at the top of the file, immediately after the header comment block. This ensures dependencies and macros are clearly visible and globally scoped.
+
 ## Key Files
 
 | File | Responsibility |

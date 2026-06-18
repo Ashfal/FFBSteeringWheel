@@ -13,6 +13,16 @@
 #include "usb_ffb_descriptors.h"
 #include <cstring>
 
+#define EPNUM_HID         0x81
+#define EPNUM_CDC_NOTIF   0x82
+#define EPNUM_CDC_OUT     0x03
+#define EPNUM_CDC_IN      0x83
+
+// TUD_HID_DESCRIPTOR uses sizeof(desc_hid_report) for wDescriptorLength.
+// We need to use COMBINED_REPORT_DESC_SIZE instead, so we build manually.
+// TUD_HID_DESCRIPTOR(itf, str, proto, report_len, epin, bufsize, poll)
+#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
+
 // =========================================================================
 // Joystick Input Report Descriptor Fragment (Report ID 1)
 // =========================================================================
@@ -188,15 +198,6 @@ enum {
     ITF_NUM_TOTAL = 3
 };
 
-#define EPNUM_HID         0x81
-#define EPNUM_CDC_NOTIF   0x82
-#define EPNUM_CDC_OUT     0x03
-#define EPNUM_CDC_IN      0x83
-
-// TUD_HID_DESCRIPTOR uses sizeof(desc_hid_report) for wDescriptorLength.
-// We need to use COMBINED_REPORT_DESC_SIZE instead, so we build manually.
-// TUD_HID_DESCRIPTOR(itf, str, proto, report_len, epin, bufsize, poll)
-#define CONFIG_TOTAL_LEN  (TUD_CONFIG_DESC_LEN + TUD_HID_DESC_LEN + TUD_CDC_DESC_LEN)
 
 static uint8_t desc_configuration[CONFIG_TOTAL_LEN];
 static bool config_built = false;

@@ -12,13 +12,14 @@
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
 
-// Resolve I2C peripheral from config-derived instance number
-static auto* const I2C_PORT = i2c_get_instance(I2C_INSTANCE);
-
 // I2C DATA_CMD register flags
 #define I2C_CMD_RESTART 0x400
 #define I2C_CMD_STOP    0x200
 #define I2C_CMD_READ    0x100
+
+// Resolve I2C peripheral from config-derived instance number
+static auto* const I2C_PORT = i2c_get_instance(I2C_INSTANCE);
+
 
 void I2CDMA::init_peripheral_() {
     i2c_init(I2C_PORT, I2C_FREQ_HZ);

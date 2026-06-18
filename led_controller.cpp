@@ -11,11 +11,8 @@
 #include "hardware/gpio.h"
 #include "pico/time.h"
 
-// External access to the shared StatusState
-// (linked from main.cpp's SharedState)
-extern StatusState* g_led_status_state_ptr;
-
-void LEDController::init() {
+void LEDController::init(SharedState& state) {
+    status_state_ptr_ = &state.led_status;
     gpio_init(PIN_LED);
     gpio_set_dir(PIN_LED, GPIO_OUT);
     gpio_put(PIN_LED, 1);  // Start with LED on (normal)
@@ -23,13 +20,27 @@ void LEDController::init() {
 }
 
 void LEDController::update() {
+    uint64_t now = time_us_64();
+
     // Read current status code
     uint8_t code = 0;
-    if (g_led_status_state_ptr) {
-        code = static_cast<uint8_t>(g_led_status_state_ptr->get());
+    if (status_state_ptr_) {
+        code = static_cast<uint8_t>(status_state_ptr_->get());
     }
 
-    uint64_t now = time_us_64();
+    if (code == static_cast<uint8_t>(SystemStatus::RapidFlash)) {
+        if (code != current_code_) {
+            current_code_ = code;
+            phase_start_us_ = now;
+            rapid_flash_state_ = true;
+            gpio_put(PIN_LED, 1);
+        } else if (now - phase_start_us_ >= LED_RAPID_FLASH_MS * 1000ULL) {
+            rapid_flash_state_ = !rapid_flash_state_;
+            gpio_put(PIN_LED, rapid_flash_state_ ? 1 : 0);
+            phase_start_us_ = now;
+        }
+        return; // Skip normal flash sequences
+    }
 
     // If status is Normal (0), keep LED solid on
     if (code == 0) {
@@ -87,8 +98,8 @@ void LEDController::update() {
         case FlashPhase::PAUSE:
             if (elapsed_us >= LED_PAUSE_MS * 1000ULL) {
                 // One complete flash cycle finished — decrement the minimum display counter
-                if (g_led_status_state_ptr) {
-                    g_led_status_state_ptr->decrement_display_cycle();
+                if (status_state_ptr_) {
+                    status_state_ptr_->decrement_display_cycle();
                 }
 
                 // Restart the flash sequence
@@ -100,6 +111,3 @@ void LEDController::update() {
             break;
     }
 }
-
-// Global pointer — set by main.cpp
-StatusState* g_led_status_state_ptr = nullptr;

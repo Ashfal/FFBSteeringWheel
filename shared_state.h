@@ -112,8 +112,8 @@ struct StatusState {
         while (val > current) {
             if (status.compare_exchange_weak(current, val)) {
                 // Set minimum display cycles so the LED flashes long enough to see
-                // Exclude status codes 1 to 3 (BootWait, MotorSweepsActive, PedalCalActive)
-                if (val > 3) {
+                // Exclude status codes 1 to 3 (BootWait, MotorSweepsActive, PedalCalActive) and RapidFlash
+                if (val > 4 && val != static_cast<uint8_t>(SystemStatus::RapidFlash)) {
                     min_cycles_remaining.store(LED_MIN_DISPLAY_CYCLES);
                 }
                 clear_pending.store(false);

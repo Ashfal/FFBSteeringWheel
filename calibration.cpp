@@ -11,6 +11,7 @@
 #include "i2c_dma.h"
 #include "motor_control.h"
 #include "as5600_parser.h"
+#include "hardware/watchdog.h"
 
 // Helper to do a blocking I2C read during calibration
 // Returns false if the read times out or the sensor reports an error.
@@ -132,8 +133,6 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
     return (max_vel >= 0) ? max_vel : -max_vel;
 }
 
-#include "hardware/watchdog.h"
-
 void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& pedals, LEDController& led, FlashStorage& flash) {
 
     // Instantiate hardware for calibration locally on the stack
@@ -216,7 +215,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     while (buttons.get_buttons() != 0) {
         buttons.update();
         led.update();
-        sleep_ms(1);
+        sleep_us(BUTTON_UPDATE_INTERVAL_US);
     }
 
     // Phase 2: User pumps pedals. Long press cal button again to save.
@@ -250,6 +249,16 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
         sleep_ms(1);
     }
 
+    state.led_status.clear(SystemStatus::PedalCalActive);
+
+    // Flash LED quickly to indicate flash save
+    state.led_status.set(SystemStatus::RapidFlash);
+    for (int i = 0; i < 20; i++) {
+        led.update();
+        sleep_ms(50);
+    }
+    state.led_status.clear(SystemStatus::RapidFlash);
+
     // Save everything to flash
     FlashCalibrationData data;
     data.center_position = state.center_offset.load();
@@ -267,7 +276,6 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
 
     // Use core1_running = false since Core 1 isn't running yet
     bool save_success = flash.save(data, false);
-    state.led_status.clear(SystemStatus::PedalCalActive);
 
     if (!save_success) {
         state.led_status.set(SystemStatus::FlashWriteFailed);

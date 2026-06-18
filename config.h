@@ -154,6 +154,7 @@ constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 constexpr uint32_t LED_FLASH_ON_MS       = 200;
 constexpr uint32_t LED_FLASH_OFF_MS      = 500;
 constexpr uint32_t LED_PAUSE_MS          = 2000;
+constexpr uint32_t LED_RAPID_FLASH_MS    = 50;
 // Minimum number of complete flash cycles before a clear() takes effect.
 // Ensures transient errors are visible long enough to read.
 constexpr uint8_t  LED_MIN_DISPLAY_CYCLES = 2;
@@ -218,11 +219,12 @@ enum class SystemStatus : uint8_t {
     MotorSweepsActive = 2,  // Flash calibration: Motor sweeps in progress
     PedalCalActive   = 3,   // Flash calibration: Pedal calibration in progress
     FlashCalMissing  = 5,   // No valid flash calibration data
+    FlashWriteFailed = 6,  // Failed to save calibration data to flash
     MagnetHigh       = 7,   // AS5600: magnet too strong (MH=1)
     MagnetLow        = 8,   // AS5600: magnet too weak (ML=1)
     MagnetMissing    = 9,   // AS5600: no magnet detected (MD=0)
     I2CWatchdogFired = 10,  // I2C DMA watchdog expired — motor killed
     EncoderDesync    = 11,  // Repeated impossible jumps — motor killed
     DesyncAfterRecovery = 12, // Impossible jump on first read after watchdog recovery
-    FlashWriteFailed = 13,  // Failed to save calibration data to flash
+    RapidFlash       = 254  // Special mode: rapid continuous flashing, clearable immediately
 };
