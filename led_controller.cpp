@@ -19,6 +19,16 @@ void LEDController::init(SharedState& state) {
     phase_ = FlashPhase::IDLE;
 }
 
+void LEDController::sleep_ms(uint32_t ms) {
+    while (ms > 0) {
+        update();
+        // Step in 10ms chunks (or less) to accurately catch RapidFlash (50ms) edges
+        uint32_t step = (ms > 10) ? 10 : ms;
+        ::sleep_ms(step); // Use :: to call the global Pico SDK function, not ourselves!
+        ms -= step;
+    }
+}
+
 void LEDController::update() {
     uint64_t now = time_us_64();
 

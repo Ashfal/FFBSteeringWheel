@@ -39,6 +39,9 @@ static volatile uint64_t g_last_loop_time_us = 0;
 // Transient EMI tolerance counter (file scope so both branches can access it)
 static uint8_t g_magnet_error_count = 0;
 
+// Fatal error flag so Watchdog knows not to restart an intentionally halted loop
+static volatile bool g_fatal_error = false;
+
 void core1_set_shared_state(SharedState& state) {
     g_state = &state;
 }
@@ -86,10 +89,12 @@ static void dma_isr() {
             } else if (err & SensorState::ERR_DESYNC) {
                 g_state->led_status.set(SystemStatus::EncoderDesync);
                 debug_log_error(SystemStatus::EncoderDesync);
+                g_fatal_error = true;
                 alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
             } else if (err & SensorState::ERR_RECOVERY_DESYNC) {
                 g_state->led_status.set(SystemStatus::DesyncAfterRecovery);
                 debug_log_error(SystemStatus::DesyncAfterRecovery);
+                g_fatal_error = true;
                 alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
             }
         }
@@ -201,6 +206,11 @@ void core1_main() {
     bool in_error_state = false;
     uint32_t recovery_success_count = 0;
     while (true) {
+        if (g_fatal_error) {
+            sleep_ms(100);
+            continue;
+        }
+
         uint64_t now = time_us_64();
         if (now - g_last_loop_time_us > I2C_WATCHDOG_TIMEOUT_US) {
             // Watchdog fired! Loop stalled.

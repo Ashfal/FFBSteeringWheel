@@ -491,16 +491,30 @@ static void process_command(char* cmd) {
 // Main update — called from Core 0 main loop
 // =========================================================================
 
+static uint64_t g_connected_timestamp = 0;
+static bool g_was_connected = false;
+
 void debug_serial_update() {
-    if (!tud_cdc_connected()) {
+    bool connected = tud_cdc_connected();
+    if (!connected) {
         g_prompt_printed = false;
         g_line_len = 0;
+        g_was_connected = false;
         return;
     }
 
+    if (!g_was_connected) {
+        g_was_connected = true;
+        g_connected_timestamp = time_us_64();
+    }
+
     if (!g_prompt_printed) {
-        cdc_print("\r\nffbserial: ");
-        g_prompt_printed = true;
+        // Wait 500ms after connection before sending the first prompt
+        // to give the host terminal software time to initialize.
+        if (time_us_64() - g_connected_timestamp > 500000) {
+            cdc_print("\r\nffbserial: ");
+            g_prompt_printed = true;
+        }
     }
 
     if (!tud_cdc_available()) return;

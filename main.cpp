@@ -136,10 +136,7 @@ int main() {
         if (num_pressed == 2) { //Bootloader Mode
             // Flash LED quickly to indicate bootloader transition
             g_shared_state.led_status.set(SystemStatus::RapidFlash);
-            for (int i = 0; i < 20; i++) {
-                g_led.update();
-                sleep_ms(50);
-            }
+            g_led.sleep_ms(1000);
             reset_usb_boot(1u << PIN_LED, 0);
             while (true) {
                 tight_loop_contents();

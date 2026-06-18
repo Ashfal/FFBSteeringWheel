@@ -178,7 +178,7 @@ constexpr uint32_t CORE1_CMD_RESUME      = 0xAAAAAAAA;
 constexpr uint32_t CORE1_CMD_ACK         = 0x11111111;
 
 
-// Overpower Detection (Dynamic Damping)
+// Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
 constexpr int32_t VELOCITY_MARGIN_CPS        = 5000;       // Safety margin (counts/sec) for imperfect LUT readings

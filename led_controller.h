@@ -7,6 +7,7 @@ class LEDController {
 public:
     void init(SharedState& state);
     void update();  // Call from main loop — non-blocking
+    void sleep_ms(uint32_t ms); // Blocking sleep that continuously updates the LED
 
 private:
     enum class FlashPhase : uint8_t {

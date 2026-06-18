@@ -33,12 +33,12 @@ static bool block_read_sensor(I2CDMA& i2c, AS5600Parser& parser) {
 }
 
 // Find minimum PWM to overcome static friction
-static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser) {
+static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser, LEDController& led) {
     uint16_t test_pwm = PWM_WRAP / 10; //start at 10% PWM
     
     // Ensure we are stopped
     motor.brake();
-    sleep_ms(200);
+    led.sleep_ms(200);
 
     block_read_sensor(i2c, parser);
     int32_t start_pos = parser.get_position();
@@ -47,7 +47,7 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
         motor.set_pwm(test_pwm, dir, 0.0f);
         
         // Wait briefly for movement
-        sleep_ms(50);
+        led.sleep_ms(50);
         
         block_read_sensor(i2c, parser);
         int32_t pos = parser.get_position();
@@ -77,13 +77,14 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
     while (time_us_64() - settle_start < 1000000) {
         block_read_sensor(i2c, parser);
         if (parser.get_velocity() == 0) break;
+        led.update();
         sleep_ms(10);
     }
     return test_pwm;
 }
 
 // Sweep at a constant force and find maximum stable speed
-static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser) {
+static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c, AS5600Parser& parser, LEDController& led) {
     motor.set_force(force, 0);
     
     bool is_cw = force > 0;
@@ -98,6 +99,7 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
     while (true) {
         if (time_us_64() - start_time > 5000000) break; // 5s timeout
 
+        led.update();
         sleep_ms(2); // ~500Hz sampling
         if (!block_read_sensor(i2c, parser)) continue;
         
@@ -126,6 +128,7 @@ static int32_t measure_max_speed(int32_t force, MotorControl& motor, I2CDMA& i2c
     while (time_us_64() - settle_start < 2000000) {
         block_read_sensor(i2c, parser);
         if (parser.get_velocity() == 0) break;
+        led.update();
         sleep_ms(10);
     }
     
@@ -145,6 +148,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     motor.init();
 
     state.led_status.set(SystemStatus::MotorSweepsActive);
+    led.update();
     
     // 1. Grab absolute raw center
     // Do a blocking read to get the raw angle safely
@@ -181,8 +185,8 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     block_read_sensor(i2c, parser);
     
     // 1. Find Zero PWM
-    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, motor, i2c, parser);
-    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, motor, i2c, parser);
+    uint16_t cw_zero = find_zero_pwm(MotorControl::Direction::CW, motor, i2c, parser, led);
+    uint16_t ccw_zero = find_zero_pwm(MotorControl::Direction::CCW, motor, i2c, parser, led);
     
     // Apply friction compensation immediately so the speed sweeps are accurate
     motor.set_calibration_zero(cw_zero, ccw_zero);
@@ -194,8 +198,8 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         int32_t force = CAL_FORCE_LEVELS[i];
         
-        luts.cw_speed[i] = measure_max_speed(force, motor, i2c, parser);
-        luts.ccw_speed[i] = measure_max_speed(-force, motor, i2c, parser);
+        luts.cw_speed[i] = measure_max_speed(force, motor, i2c, parser, led);
+        luts.ccw_speed[i] = measure_max_speed(-force, motor, i2c, parser, led);
     }
     
     // Verify LUTs are somewhat sane (speed should monotonically increase)
@@ -253,10 +257,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
 
     // Flash LED quickly to indicate flash save
     state.led_status.set(SystemStatus::RapidFlash);
-    for (int i = 0; i < 20; i++) {
-        led.update();
-        sleep_ms(50);
-    }
+    led.sleep_ms(1000);
     state.led_status.clear(SystemStatus::RapidFlash);
 
     // Save everything to flash
