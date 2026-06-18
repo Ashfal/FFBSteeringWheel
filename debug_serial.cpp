@@ -398,7 +398,6 @@ static void print_help() {
     cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccwz, center, angle)\r\n");
     cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cw, ccw; idx: 0-4)\r\n");
     cdc_print("  cw              - Write live calibration data to flash\r\n");
-    cdc_print("  exit            - Hide prompt\r\n");
     cdc_print("  help            - Print this help\r\n");
 }
 
@@ -428,9 +427,6 @@ static void process_command(char* cmd) {
         cmd_errors();
     } else if (strcmp(argv[0], "help") == 0) {
         print_help();
-    } else if (strcmp(argv[0], "exit") == 0) {
-        cdc_print("Disconnected.\r\n");
-        g_prompt_printed = false;
     } else if (strcmp(argv[0], "cw") == 0) {
         cmd_save_calibration();
     } else if (strcmp(argv[0], "cs") == 0) {
