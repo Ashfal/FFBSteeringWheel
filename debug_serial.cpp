@@ -214,14 +214,6 @@ static void cmd_calibration() {
 
 static void cmd_save_calibration() {
     if (!g_dbg_state || !g_dbg_pedals || !g_dbg_flash) return;
-    
-    cdc_print("Suspending Core 1...\r\n");
-    multicore_fifo_push_blocking(CORE1_CMD_SUSPEND);
-    uint32_t ack = multicore_fifo_pop_blocking();
-    if (ack != CORE1_CMD_ACK) {
-        cdc_print("ERR: Core 1 did not ACK suspend\r\n");
-        return;
-    }
 
     cdc_print("Saving to flash...\r\n");
     FlashCalibrationData data;
@@ -240,11 +232,6 @@ static void cmd_save_calibration() {
     bool ok = g_dbg_flash->save(data, true);
 
     cdc_print(ok ? "Save OK\r\n" : "Save FAILED\r\n");
-
-    cdc_print("Resuming Core 1...\r\n");
-    multicore_fifo_push_blocking(CORE1_CMD_RESUME);
-    multicore_fifo_pop_blocking(); // Wait for ACK
-    cdc_print("Done.\r\n");
 }
 
 // =========================================================================

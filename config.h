@@ -172,12 +172,6 @@ constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 // Flash calibration version
 constexpr uint32_t FLASH_DATA_VERSION    = 3;
 
-// Inter-core commands
-constexpr uint32_t CORE1_CMD_SUSPEND     = 0x55555555;
-constexpr uint32_t CORE1_CMD_RESUME      = 0xAAAAAAAA;
-constexpr uint32_t CORE1_CMD_ACK         = 0x11111111;
-
-
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
 // Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
