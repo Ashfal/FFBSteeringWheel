@@ -63,13 +63,13 @@ int main() {
         g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
         g_shared_state.cal_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
                                  
-        g_shared_state.cal_state.cw_zero_pwm = cal_data.cw_zero_pwm;
-        g_shared_state.cal_state.ccw_zero_pwm = cal_data.ccw_zero_pwm;
+        g_shared_state.cal_state.cw_zero_pwm.store(cal_data.cw_zero_pwm);
+        g_shared_state.cal_state.ccw_zero_pwm.store(cal_data.ccw_zero_pwm);
         for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            g_shared_state.cal_state.cw_speed[i] = cal_data.cw_speed[i];
-            g_shared_state.cal_state.ccw_speed[i] = cal_data.ccw_speed[i];
+            g_shared_state.cal_state.cw_speed[i].store(cal_data.cw_speed[i]);
+            g_shared_state.cal_state.ccw_speed[i].store(cal_data.ccw_speed[i]);
         }
-        g_shared_state.cal_state.valid = true;
+        g_shared_state.cal_state.valid.store(true);
 
         g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {

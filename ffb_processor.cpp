@@ -345,55 +345,56 @@ int32_t FFBProcessor::apply_envelope(const EffectSlot& e, int32_t force,
 }
 
 int32_t FFBProcessor::lookup_expected_speed(int32_t force) const {
-    if (!cal_luts_ || !cal_luts_->valid) return 0;
+    if (!cal_luts_ || !cal_luts_->valid.load(std::memory_order_relaxed)) return 0;
 
     bool is_cw = force > 0;
     int32_t abs_force = is_cw ? force : -force;
-    const int32_t* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
+    const std::atomic<int32_t>* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
 
     // Find the two bracketing force levels and interpolate
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         if (abs_force <= CAL_FORCE_LEVELS[i]) {
             if (i == 0) {
                 if (CAL_FORCE_LEVELS[0] == 0) return 0;
-                return (abs_force * lut[0]) / CAL_FORCE_LEVELS[0];
+                return (abs_force * lut[0].load(std::memory_order_relaxed)) / CAL_FORCE_LEVELS[0];
             }
             // Linear interpolation between lut[i-1] and lut[i]
             int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
             int32_t force_high = CAL_FORCE_LEVELS[i];
-            int32_t spd_low  = lut[i - 1];
-            int32_t spd_high = lut[i];
+            int32_t spd_low  = lut[i - 1].load(std::memory_order_relaxed);
+            int32_t spd_high = lut[i].load(std::memory_order_relaxed);
             return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
         }
     }
     
-    // Force exceeds the calibrated table (e.g. > 3000), extrapolate using the last two points
+    // Force exceeds the calibrated table, extrapolate using the last two points
     int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
     int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
-    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
+    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2].load(std::memory_order_relaxed);
+    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1].load(std::memory_order_relaxed);
     
     return spd_low + ((spd_high - spd_low) * (abs_force - force_low)) / (force_high - force_low);
 }
 
 int32_t FFBProcessor::lookup_required_force(int32_t velocity) const {
-    if (!cal_luts_ || !cal_luts_->valid) return 0;
+    if (!cal_luts_ || !cal_luts_->valid.load(std::memory_order_relaxed)) return 0;
     if (velocity == 0) return 0;
 
     bool is_cw = velocity > 0;
     int32_t abs_vel = is_cw ? velocity : -velocity;
-    const int32_t* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
+    const std::atomic<int32_t>* lut = is_cw ? cal_luts_->cw_speed : cal_luts_->ccw_speed;
 
     // Find the two bracketing speed levels and interpolate the required force
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        if (abs_vel <= lut[i]) {
+        if (abs_vel <= lut[i].load(std::memory_order_relaxed)) {
             if (i == 0) {
-                if (lut[0] == 0) return CAL_FORCE_LEVELS[0];
-                return (abs_vel * CAL_FORCE_LEVELS[0]) / lut[0];
+                int32_t lut0 = lut[0].load(std::memory_order_relaxed);
+                if (lut0 == 0) return CAL_FORCE_LEVELS[0];
+                return (abs_vel * CAL_FORCE_LEVELS[0]) / lut0;
             }
             // Linear interpolation between lut[i-1] and lut[i]
-            int32_t spd_low  = lut[i - 1];
-            int32_t spd_high = lut[i];
+            int32_t spd_low  = lut[i - 1].load(std::memory_order_relaxed);
+            int32_t spd_high = lut[i].load(std::memory_order_relaxed);
             int32_t force_low  = CAL_FORCE_LEVELS[i - 1];
             int32_t force_high = CAL_FORCE_LEVELS[i];
             
@@ -403,8 +404,8 @@ int32_t FFBProcessor::lookup_required_force(int32_t velocity) const {
     }
     
     // Velocity exceeds the calibrated table, extrapolate using the last two points
-    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2];
-    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1];
+    int32_t spd_low  = lut[CAL_FORCE_LEVEL_COUNT - 2].load(std::memory_order_relaxed);
+    int32_t spd_high = lut[CAL_FORCE_LEVEL_COUNT - 1].load(std::memory_order_relaxed);
     int32_t force_low  = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 2];
     int32_t force_high = CAL_FORCE_LEVELS[CAL_FORCE_LEVEL_COUNT - 1];
     

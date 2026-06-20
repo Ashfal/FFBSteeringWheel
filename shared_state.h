@@ -86,14 +86,14 @@ struct EffectState {
 struct CalibrationState {
     // Speed LUT: expected maximum raw velocity at each force level
     // Index corresponds to CAL_FORCE_LEVELS[]
-    int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
-    int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
+    std::atomic<int32_t>  cw_speed[CAL_FORCE_LEVEL_COUNT];
+    std::atomic<int32_t>  ccw_speed[CAL_FORCE_LEVEL_COUNT];
 
     // Minimum PWM to overcome static friction (independently per direction)
-    uint16_t cw_zero_pwm;
-    uint16_t ccw_zero_pwm;
+    std::atomic<uint16_t> cw_zero_pwm{0};
+    std::atomic<uint16_t> ccw_zero_pwm{0};
 
-    bool     valid = false;
+    std::atomic<bool>     valid{false};
 
     std::atomic<int32_t> center_offset{0};
     std::atomic<int32_t> max_half_angle_counts{12288};
@@ -128,29 +128,35 @@ struct LEDState {
 
     void clear(SystemStatus s) {
         uint8_t expected = static_cast<uint8_t>(s);
-        
-        if (min_cycles_remaining.load() > 0) {
+
+        // RapidFlash is always immediately clearable — bypass the minimum cycle guard
+        if (s != SystemStatus::RapidFlash && min_cycles_remaining.load() > 0) {
             // Must finish minimum flash. If this is the active code, mark it to be cleared later.
             if (status.load() == expected) {
                 clear_pending.store(true);
             }
-            return; 
+            return;
         }
-        
+
         // Only clear if this exact status is currently active
         status.compare_exchange_strong(expected, 0);
     }
 
     // Called by LED controller at the end of each complete flash cycle
     void decrement_display_cycle() {
+        // CAS loop: prevents a race where set() writes a new value between our
+        // load and store, which would silently undo the set() call.
         uint8_t c = min_cycles_remaining.load();
-        if (c > 0) {
-            min_cycles_remaining.store(c - 1);
-            // If we just finished the minimum cycles and a clear is pending, clear it now
-            if (c - 1 == 0 && clear_pending.load()) {
-                status.store(0);
-                clear_pending.store(false);
+        while (c > 0) {
+            if (min_cycles_remaining.compare_exchange_weak(c, c - 1)) {
+                // Successfully decremented — if we hit zero and a clear is pending, apply it
+                if (c - 1 == 0 && clear_pending.load()) {
+                    status.store(0);
+                    clear_pending.store(false);
+                }
+                break;
             }
+            // compare_exchange_weak reloads c on failure — retry
         }
     }
 
@@ -186,4 +192,7 @@ struct SharedState {
 
     // Debug serial: one-shot AGC register read request
     std::atomic<bool>    request_agc_read{false};
+
+    // Debug serial: one-shot request for Core 1 to re-apply center_offset to the parser
+    std::atomic<bool>    recenter_requested{false};
 };

@@ -39,11 +39,19 @@ static volatile uint64_t g_last_loop_time_us = 0;
 // Transient EMI tolerance counter (file scope so both branches can access it)
 static uint8_t g_magnet_error_count = 0;
 
-// Fatal error flag so Watchdog knows not to restart an intentionally halted loop
-static volatile bool g_fatal_error = false;
 
 void core1_set_shared_state(SharedState& state) {
     g_state = &state;
+}
+
+static void halt_core1(SystemStatus error) {
+    g_state->led_status.set(error);
+    debug_log_error(error);
+    g_motor.stop();
+    alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+    while (true) {
+        sleep_ms(100);
+    }
 }
 
 // =========================================================================
@@ -58,6 +66,12 @@ static void dma_isr() {
 
     uint8_t status = raw_data[0];
     uint16_t angle = (static_cast<uint16_t>(raw_data[1]) << 8) | raw_data[2];
+
+    // Handle live recenter request from the debug serial console
+    if (g_state->recenter_requested.load()) {
+        g_parser.recenter(g_state->cal_state.center_offset.load());
+        g_state->recenter_requested.store(false);
+    }
 
     // 1. Parse Sensor
     uint8_t wd_flag = g_state->sensor.error_flags.load() & SensorState::ERR_I2C_WATCHDOG;
@@ -88,15 +102,9 @@ static void dma_isr() {
                 g_state->led_status.set(SystemStatus::MagnetLow);
                 debug_log_error(SystemStatus::MagnetLow);
             } else if (err & SensorState::ERR_DESYNC) {
-                g_state->led_status.set(SystemStatus::EncoderDesync);
-                debug_log_error(SystemStatus::EncoderDesync);
-                g_fatal_error = true;
-                alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+                halt_core1(SystemStatus::EncoderDesync);
             } else if (err & SensorState::ERR_RECOVERY_DESYNC) {
-                g_state->led_status.set(SystemStatus::DesyncAfterRecovery);
-                debug_log_error(SystemStatus::DesyncAfterRecovery);
-                g_fatal_error = true;
-                alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
+                halt_core1(SystemStatus::DesyncAfterRecovery);
             }
         }
         // Below tolerance: motor holds its last commanded value, skip FFB processing
@@ -178,11 +186,14 @@ void core1_init_interrupts() {
 // =========================================================================
 // Core 1 Main Entry
 // =========================================================================
+
 void core1_main() {
     if (!g_state) return;
 
     // Initialize I2C, Motor, and Parser
-    g_i2c.init();
+    if (!g_i2c.init()) {
+        halt_core1(SystemStatus::EncoderConfWriteFailed);
+    }
     g_parser.init();
     g_motor.init();
 
@@ -191,7 +202,8 @@ void core1_main() {
     g_ffb.init(&g_state->cal_state);
     
     // Apply friction compensation from LUTs
-    g_motor.set_calibration_zero(g_state->cal_state.cw_zero_pwm, g_state->cal_state.ccw_zero_pwm);
+    g_motor.set_calibration_zero(g_state->cal_state.cw_zero_pwm.load(),
+                                 g_state->cal_state.ccw_zero_pwm.load());
 
     core1_init_interrupts();
     multicore_lockout_victim_init();
@@ -207,10 +219,6 @@ void core1_main() {
     // Background Watchdog Loop
     uint8_t watchdog_fault_acc = 0; // Leaky bucket: +5 on failure, -1 on success
     while (true) {
-        if (g_fatal_error) {
-            sleep_ms(100);
-            continue;
-        }
 
         uint64_t now = time_us_64();
         
@@ -241,7 +249,9 @@ void core1_main() {
             alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
 
             // Aggressively attempt to reset the I2C bus and un-stick the slave
-            g_i2c.reset_bus();
+            if (!g_i2c.reset_bus()) {
+                halt_core1(SystemStatus::EncoderConfWriteFailed);
+            }
 
             // Re-arm the 1ms alarm now that the bus is reinitialized
             g_timer_alarm = alarm_pool_add_alarm_in_us(

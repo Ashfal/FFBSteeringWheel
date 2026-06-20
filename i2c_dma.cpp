@@ -11,6 +11,7 @@
 #include "hardware/i2c.h"
 #include "hardware/dma.h"
 #include "hardware/gpio.h"
+#include "pico/time.h"
 
 // I2C DATA_CMD register flags
 #define I2C_CMD_RESTART 0x400
@@ -21,7 +22,7 @@
 static auto* const I2C_PORT = i2c_get_instance(I2C_INSTANCE);
 
 
-void I2CDMA::init_peripheral_() {
+bool I2CDMA::init_peripheral_() {
     i2c_init(I2C_PORT, I2C_FREQ_HZ);
     gpio_set_function(PIN_I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(PIN_I2C_SCL, GPIO_FUNC_I2C);
@@ -30,11 +31,20 @@ void I2CDMA::init_peripheral_() {
 
     // Initialize AS5600 CONF register (16-bit write: PM=00, SF=10, FTH=100, WD=0)
     uint8_t config_data[3] = {AS5600_REG_CONF, AS5600_CONF_VALUE_H, AS5600_CONF_VALUE_L};
-    i2c_write_blocking(I2C_PORT, AS5600_I2C_ADDR, config_data, 3, false);
+    
+    for (int i = 0; i < AS5600_CONF_RETRY_COUNT; i++) {
+        int wrote = i2c_write_blocking(I2C_PORT, AS5600_I2C_ADDR, config_data, 3, false);
+        if (wrote == 3) {
+            return true;
+        }
+        sleep_ms(1); // Brief sleep before retry
+    }
+
+    return false;
 }
 
-void I2CDMA::init() {
-    init_peripheral_();
+bool I2CDMA::init() {
+    if (!init_peripheral_()) return false;
 
     dma_tx_chan_ = dma_claim_unused_channel(true);
     dma_rx_chan_ = dma_claim_unused_channel(true);
@@ -63,6 +73,8 @@ void I2CDMA::init() {
 
     // Enable DMA IRQ for RX completion (once, not per-read)
     dma_channel_set_irq0_enabled(dma_rx_chan_, true);
+
+    return true;
 }
 
 void I2CDMA::start_read() {
@@ -110,7 +122,7 @@ bool I2CDMA::handle_isr() {
     return false;
 }
 
-void I2CDMA::reset_bus() {
+bool I2CDMA::reset_bus() {
     // 1. Abort any hanging DMA
     dma_channel_abort(dma_tx_chan_);
     dma_channel_abort(dma_rx_chan_);
@@ -147,6 +159,6 @@ void I2CDMA::reset_bus() {
     sleep_us(5);
 
     // 6. Re-initialize I2C peripheral and re-apply AS5600 config
-    init_peripheral_();
+    return init_peripheral_();
 }
 

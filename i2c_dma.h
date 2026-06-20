@@ -4,7 +4,7 @@
 
 class I2CDMA {
 public:
-    void init();
+    bool init();
 
     // Start a non-blocking DMA transfer to read from the AS5600
     void start_read();
@@ -14,7 +14,7 @@ public:
     bool handle_isr();
 
     // Aggressively attempt to clear a stuck I2C bus and reset the peripheral
-    void reset_bus();
+    bool reset_bus();
 
     // Get the latest read data
     // data[0] = Status Register
@@ -24,7 +24,7 @@ public:
 
 private:
     // Shared I2C peripheral + AS5600 setup (used by init and reset_bus)
-    void init_peripheral_();
+    bool init_peripheral_();
 
     int dma_tx_chan_ = -1;
     int dma_rx_chan_ = -1;

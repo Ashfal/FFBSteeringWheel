@@ -105,6 +105,7 @@ constexpr uint8_t  AS5600_REG_RAW_ANGLE_L = 0x0D;
 // Initial CONF register values for AS5600 (PM=00, SF=10, FTH=100, WD=0)
 constexpr uint8_t  AS5600_CONF_VALUE_H   = 0x12;
 constexpr uint8_t  AS5600_CONF_VALUE_L   = 0x00;
+constexpr uint8_t  AS5600_CONF_RETRY_COUNT = 3;
 
 // AS5600 status register bits
 constexpr uint8_t  AS5600_STATUS_MH      = 0x08;    // Magnet too strong
@@ -186,7 +187,7 @@ constexpr int32_t  CAL_FORCE_LEVELS[]    = {
     1500,
     2500,
 };
-constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = 5;
+constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = sizeof(CAL_FORCE_LEVELS) / sizeof(CAL_FORCE_LEVELS[0]);
 
 // Minimum sweep distance during calibration
 constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 16;
@@ -224,5 +225,7 @@ enum class SystemStatus : uint8_t {
     I2CWatchdogFired = 10,  // I2C DMA watchdog expired — motor killed
     EncoderDesync    = 11,  // Repeated impossible jumps — motor killed
     DesyncAfterRecovery = 12, // Impossible jump on first read after watchdog recovery
+    EncoderConfWriteFailed  = 13,  // AS5600 CONF register write failed after retries
     RapidFlash       = 254  // Special mode: rapid continuous flashing, clearable immediately
 };
+

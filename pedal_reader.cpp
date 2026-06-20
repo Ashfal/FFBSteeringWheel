@@ -1,9 +1,9 @@
 // =========================================================================
-// Pedal Reader — ADC + DMA, Median Filter
+// Pedal Reader — ADC, Trimmed Mean Filter
 // =========================================================================
-// Reads 2 analog pedals via ADC with DMA at 3kHz.
-// Uses a 3-sample rolling buffer with spike rejection:
-// if one read differs by >30%, discard it and average the remaining two.
+// Reads 2 analog pedals via ADC (direct reads, 3 samples per channel).
+// Uses a 20-sample rolling buffer with a trimmed mean filter:
+// discards the 2 highest and 2 lowest values, averages the remaining 16.
 // =========================================================================
 
 #include "pedal_reader.h"

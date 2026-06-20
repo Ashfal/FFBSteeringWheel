@@ -167,7 +167,12 @@ All tunable parameters live in `config.h`. This includes:
 5. **Static friction compensation** adds a calibrated `cw_zero_pwm` / `ccw_zero_pwm` offset to all force commands so the motor breaks static friction at any non-zero force level.
 6. **Electronic end-stops** in `FFBProcessor` apply a proportional reverse spring force when the wheel exceeds `MAX_HALF_ANGLE_COUNTS`, short-circuiting all other effect processing.
 7. **Dynamic damping (overpower detection)** in `FFBProcessor`: if the wheel velocity exceeds the expected speed for the commanded force (from calibration LUTs + safety margin), a damping counter-force is applied to prevent the wheel from overshooting.
-8. **I2C watchdog** stops the motor and attempts aggressive bus recovery (SCL bit-bang + peripheral reinit + AS5600 CONF rewrite) if the 1ms DMA loop stalls. The 1ms alarm is cancelled during bus recovery to prevent `start_read()` racing with the reset.
+8. **I2C watchdog** uses a leaky-bucket accumulator to tolerate transient bus glitches before killing the motor:
+   - Each watchdog timeout (DMA ISR hasn't fired within `I2C_WATCHDOG_TIMEOUT_US` = 5ms) adds **+5 penalty points**.
+   - Once the accumulator reaches **50 points** (~10 consecutive timeouts, ~50ms), the motor is stopped and the `I2CWatchdogFired` LED code is set.
+   - Each successful DMA loop reduces the accumulator by **-1 point** (~2ms per iteration = ~100ms to fully recover).
+   - On full recovery (accumulator reaches 0), the `I2CWatchdogFired` LED and error flag are cleared.
+   - On every timeout, regardless of threshold, the 1ms alarm is cancelled, `reset_bus()` is called (SCL bit-bang + peripheral reinit + AS5600 CONF rewrite), and the alarm is re-armed. This prevents `start_read()` racing with the reset.
 9. **Sensor error tolerance:** Transient I2C/EMI dropouts (missing MD bit) are ignored for up to `MAGNET_ERROR_TOLERANCE_FRAMES`. If the error persists, the DMA ISR stops the motor, skips FFB processing, logs to the debug buffer, and sets the LED error code.
 10. **LED visibility guarantees:** Transient status codes are guaranteed to flash for at least `LED_MIN_DISPLAY_CYCLES` complete sequences before a self-clearing condition can turn the LED back to solid ON.
 11. **Glitch filter with dead-reckoning:** If the AS5600 reports an impossible position jump (delta > `MAX_PHYSICAL_DELTA`), the parser extrapolates position from the last known velocity instead of accepting the bad data. After 10 consecutive impossible jumps, a fatal `EncoderDesync` error stops the motor and halts the I2C loop.
@@ -177,7 +182,8 @@ All tunable parameters live in `config.h`. This includes:
 ## Timing Constraints
 
 - **1ms:** I2C DMA read cycle (alarm-triggered)
-- **2ms:** Watchdog timeout (motor kill if DMA ISR hasn't fired)
+- **5ms:** Watchdog timeout threshold (`I2C_WATCHDOG_TIMEOUT_US`) — triggers bus recovery attempt
+- **~50ms:** Leaky-bucket threshold before motor kill (10 consecutive watchdog timeouts)
 - **0.5ms / 2ms:** Decoupled input sampling intervals (pedals at 2000Hz, buttons at 500Hz)
 - **10ms:** USB HID input report rate (100Hz)
 - **50µs:** Dead-time between H-bridge direction changes

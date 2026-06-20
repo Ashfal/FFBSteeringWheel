@@ -2,7 +2,7 @@
 // Calibration Routine
 // =========================================================================
 // Sweeps the motor to find static friction limits and populate speed LUTs.
-// Runs synchronously on Core 1 before the normal DMA loop starts.
+// Runs synchronously on Core 0, before Core 1 is launched, with full peripheral access.
 // =========================================================================
 
 #include "calibration.h"
@@ -44,7 +44,7 @@ static uint16_t find_zero_pwm(MotorControl::Direction dir, MotorControl& motor, 
     int32_t start_pos = parser.get_position();
 
     while (test_pwm < STALL_PWM_MAX) {
-        motor.set_pwm(test_pwm, dir, 0.0f);
+        motor.set_pwm(test_pwm, dir, 0);
         
         // Wait briefly for movement
         led.sleep_ms(50);
@@ -143,7 +143,13 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     AS5600Parser parser;
     MotorControl motor;
 
-    i2c.init();
+    if (!i2c.init()) {
+        state.cal_state.valid = false;
+        state.led_status.set(SystemStatus::EncoderConfWriteFailed);
+        while (true) {
+            led.sleep_ms(10);
+        }
+    }
     parser.init();
     motor.init();
 
@@ -191,21 +197,21 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     // Apply friction compensation immediately so the speed sweeps are accurate
     motor.set_calibration_zero(cw_zero, ccw_zero);
     
-    luts.cw_zero_pwm = cw_zero;
-    luts.ccw_zero_pwm = ccw_zero;
+    luts.cw_zero_pwm.store(cw_zero);
+    luts.ccw_zero_pwm.store(ccw_zero);
     
     // 2. Measure speeds at different force levels
     for (uint8_t i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         int32_t force = CAL_FORCE_LEVELS[i];
         
-        luts.cw_speed[i] = measure_max_speed(force, motor, i2c, parser, led);
-        luts.ccw_speed[i] = measure_max_speed(-force, motor, i2c, parser, led);
+        luts.cw_speed[i].store(measure_max_speed(force, motor, i2c, parser, led));
+        luts.ccw_speed[i].store(measure_max_speed(-force, motor, i2c, parser, led));
     }
     
     // Verify LUTs are somewhat sane (speed should monotonically increase)
     // If not, we could apply a smoothing pass here, but for now we just accept it.
     
-    luts.valid = true;
+    luts.valid.store(true);
     state.led_status.clear(SystemStatus::MotorSweepsActive);
 
     // 3. Pedal Calibration Phase
@@ -268,11 +274,11 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     data.brake_min = brake_min;
     data.brake_max = brake_max;
     
-    data.cw_zero_pwm = state.cal_state.cw_zero_pwm;
-    data.ccw_zero_pwm = state.cal_state.ccw_zero_pwm;
+    data.cw_zero_pwm = state.cal_state.cw_zero_pwm.load();
+    data.ccw_zero_pwm = state.cal_state.ccw_zero_pwm.load();
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = state.cal_state.cw_speed[i];
-        data.ccw_speed[i] = state.cal_state.ccw_speed[i];
+        data.cw_speed[i] = state.cal_state.cw_speed[i].load();
+        data.ccw_speed[i] = state.cal_state.ccw_speed[i].load();
     }
     data.wheel_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG;
 

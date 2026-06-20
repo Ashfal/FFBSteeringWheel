@@ -1,5 +1,5 @@
 // =========================================================================
-// Button Reader — SPI + DMA, 3-Read Debounce
+// Button Reader — SPI + DMA, DEBOUNCE_READS-deep debounce
 // =========================================================================
 // Reads 16 buttons from 2x HCF4021B shift registers via hardware SPI.
 // Latch pulse → SPI DMA read 2 bytes → rolling buffer → debounce.

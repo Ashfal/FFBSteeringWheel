@@ -57,12 +57,9 @@ void debug_serial_init(SharedState& state, PedalReader& pedals, FlashStorage& fl
 void debug_log_error(SystemStatus error_code) {
     uint8_t idx = g_error_log_write_idx;
     uint8_t next_idx = (idx + 1) % ERROR_LOG_SIZE;
-    
-    // If full, drop the oldest entry
-    if (next_idx == g_error_log_read_idx) {
-        g_error_log_read_idx = (g_error_log_read_idx + 1) % ERROR_LOG_SIZE;
-    }
 
+    // When full, silently overwrite the current slot and do NOT advance read_idx.
+    // read_idx is only ever written by Core 0 (cmd_errors), eliminating the cross-core race.
     g_error_log[idx].timestamp_us = time_us_64();
     g_error_log[idx].error_code = error_code;
     g_error_log_write_idx = next_idx;
@@ -73,9 +70,11 @@ void debug_log_error(SystemStatus error_code) {
 // =========================================================================
 
 static void cdc_print(const char* str) {
+    if (!tud_cdc_connected()) return;
     uint32_t len = strlen(str);
     uint32_t sent = 0;
     while (sent < len) {
+        if (!tud_cdc_connected()) return;  // Guard against mid-write disconnect
         uint32_t avail = tud_cdc_write_available();
         if (avail == 0) {
             tud_cdc_write_flush();
@@ -183,19 +182,19 @@ static void cmd_calibration() {
     cdc_print(buf);
 
     p = buf; strcpy(p, "CW Zero PWM: "); p += 13;
-    p = uint_to_str(g_dbg_state->cal_state.cw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_state.cw_zero_pwm.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "CCW Zero PWM: "); p += 14;
-    p = uint_to_str(g_dbg_state->cal_state.ccw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_state.ccw_zero_pwm.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     cdc_print("CW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(g_dbg_state->cal_state.cw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_state.cw_speed[i].load(), p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -204,7 +203,7 @@ static void cmd_calibration() {
     cdc_print("CCW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(g_dbg_state->cal_state.ccw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_state.ccw_speed[i].load(), p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -223,11 +222,11 @@ static void cmd_save_calibration() {
     data.center_position = g_dbg_state->cal_state.center_offset.load();
     data.wheel_angle_deg = g_dbg_state->cal_state.wheel_angle_deg.load();
     g_dbg_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
-    data.cw_zero_pwm = g_dbg_state->cal_state.cw_zero_pwm;
-    data.ccw_zero_pwm = g_dbg_state->cal_state.ccw_zero_pwm;
+    data.cw_zero_pwm = g_dbg_state->cal_state.cw_zero_pwm.load();
+    data.ccw_zero_pwm = g_dbg_state->cal_state.ccw_zero_pwm.load();
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = g_dbg_state->cal_state.cw_speed[i];
-        data.ccw_speed[i] = g_dbg_state->cal_state.ccw_speed[i];
+        data.cw_speed[i] = g_dbg_state->cal_state.cw_speed[i].load();
+        data.ccw_speed[i] = g_dbg_state->cal_state.ccw_speed[i].load();
     }
 
     // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute 
@@ -381,7 +380,7 @@ static void cmd_errors() {
         ErrorLogEntry& e = g_error_log[read_idx];
         p = buf;
         *p++ = '[';
-        p = int_to_str(static_cast<uint32_t>(e.timestamp_us / 1000), p);
+        p = uint_to_str(static_cast<uint32_t>(e.timestamp_us / 1000), p);  // uint to avoid sign wrap after 24d
         strcpy(p, "ms | Code "); p += 10;
         p = uint_to_str(static_cast<uint8_t>(e.error_code), p);
         strcpy(p, " ("); p += 2;
@@ -429,8 +428,8 @@ static void cmd_cs(int argc, char** argv) {
             int idx = atoi(argv[2]);
             int32_t val = atoi(argv[3]);
             if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT) {
-                if (strcmp(var, "cwl") == 0) g_dbg_state->cal_state.cw_speed[idx] = val;
-                else g_dbg_state->cal_state.ccw_speed[idx] = val;
+                if (strcmp(var, "cwl") == 0) g_dbg_state->cal_state.cw_speed[idx].store(val);
+                else g_dbg_state->cal_state.ccw_speed[idx].store(val);
                 cdc_print("LUT updated.\r\n");
             } else {
                 cdc_print("ERR: Invalid index\r\n");
@@ -441,10 +440,17 @@ static void cmd_cs(int argc, char** argv) {
         }
     } else {
         int32_t val = atoi(argv[2]);
-        if (strcmp(var, "cwz") == 0) g_dbg_state->cal_state.cw_zero_pwm = val;
-        else if (strcmp(var, "ccz") == 0) g_dbg_state->cal_state.ccw_zero_pwm = val;
-        else if (strcmp(var, "center") == 0) g_dbg_state->cal_state.center_offset.store(val);
-        else if (strcmp(var, "angle") == 0) {
+        if (strcmp(var, "cwz") == 0) g_dbg_state->cal_state.cw_zero_pwm.store(static_cast<uint16_t>(val));
+        else if (strcmp(var, "ccz") == 0) g_dbg_state->cal_state.ccw_zero_pwm.store(static_cast<uint16_t>(val));
+        else if (strcmp(var, "center") == 0) {
+            g_dbg_state->cal_state.center_offset.store(val);
+            // Signal Core 1 to re-apply the new center to the live parser
+            g_dbg_state->recenter_requested.store(true);
+        } else if (strcmp(var, "angle") == 0) {
+            if (val < 180) {
+                cdc_print("ERR: angle must be >= 180 degrees\r\n");
+                return;
+            }
             g_dbg_state->cal_state.wheel_angle_deg.store(val);
             int32_t half_deg = val / 2;
             int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
