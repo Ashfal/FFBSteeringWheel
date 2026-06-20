@@ -37,6 +37,9 @@ static FlashStorage* g_dbg_flash = nullptr;
 static char g_line_buf[64];
 static uint8_t g_line_len = 0;
 static bool g_prompt_printed = false;
+static char g_last_cmd_buf[64] = {0};
+static uint8_t g_last_cmd_len = 0;
+static uint8_t g_escape_state = 0;
 
 // =========================================================================
 // Public API
@@ -152,15 +155,15 @@ static void cmd_calibration() {
     char buf[64];
     char* p;
 
-    cdc_print("=== LIVE CALIBRATION DATA ===\r\n");
+    cdc_print("=== CALIBRATION DATA ===\r\n");
 
     p = buf; strcpy(p, "Center: "); p += 8;
-    p = int_to_str(g_dbg_state->center_offset.load(), p);
+    p = int_to_str(g_dbg_state->cal_state.center_offset.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
     
     p = buf; strcpy(p, "Wheel Angle (deg): "); p += 19;
-    p = int_to_str(g_dbg_state->wheel_angle_deg.load(), p);
+    p = int_to_str(g_dbg_state->cal_state.wheel_angle_deg.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
@@ -180,19 +183,19 @@ static void cmd_calibration() {
     cdc_print(buf);
 
     p = buf; strcpy(p, "CW Zero PWM: "); p += 13;
-    p = uint_to_str(g_dbg_state->cal_luts.cw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_state.cw_zero_pwm, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "CCW Zero PWM: "); p += 14;
-    p = uint_to_str(g_dbg_state->cal_luts.ccw_zero_pwm, p);
+    p = uint_to_str(g_dbg_state->cal_state.ccw_zero_pwm, p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     cdc_print("CW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(g_dbg_state->cal_luts.cw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_state.cw_speed[i], p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -201,7 +204,7 @@ static void cmd_calibration() {
     cdc_print("CCW Speed LUT:");
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
         p = buf; *p++ = ' ';
-        p = int_to_str(g_dbg_state->cal_luts.ccw_speed[i], p);
+        p = int_to_str(g_dbg_state->cal_state.ccw_speed[i], p);
         *p = '\0';
         cdc_print(buf);
     }
@@ -217,14 +220,14 @@ static void cmd_save_calibration() {
 
     cdc_print("Saving to flash...\r\n");
     FlashCalibrationData data;
-    data.center_position = g_dbg_state->center_offset.load();
-    data.wheel_angle_deg = g_dbg_state->wheel_angle_deg.load();
+    data.center_position = g_dbg_state->cal_state.center_offset.load();
+    data.wheel_angle_deg = g_dbg_state->cal_state.wheel_angle_deg.load();
     g_dbg_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
-    data.cw_zero_pwm = g_dbg_state->cal_luts.cw_zero_pwm;
-    data.ccw_zero_pwm = g_dbg_state->cal_luts.ccw_zero_pwm;
+    data.cw_zero_pwm = g_dbg_state->cal_state.cw_zero_pwm;
+    data.ccw_zero_pwm = g_dbg_state->cal_state.ccw_zero_pwm;
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = g_dbg_state->cal_luts.cw_speed[i];
-        data.ccw_speed[i] = g_dbg_state->cal_luts.ccw_speed[i];
+        data.cw_speed[i] = g_dbg_state->cal_state.cw_speed[i];
+        data.ccw_speed[i] = g_dbg_state->cal_state.ccw_speed[i];
     }
 
     // Core 1 is spinning, but we still pass core1_running=true so flash_safe_execute 
@@ -238,13 +241,35 @@ static void cmd_save_calibration() {
 // Command: Print live status
 // =========================================================================
 
+static void print_error_flags(uint8_t flags) {
+    char buf[128];
+    char* p = buf;
+    strcpy(p, "Err flags: "); p += 11;
+    p = uint_to_str(flags, p);
+    
+    if (flags == 0) {
+        strcpy(p, " (None)\r\n");
+    } else {
+        strcpy(p, " ("); p += 2;
+        bool first = true;
+        if (flags & SensorState::ERR_MAGNET_HIGH) { strcpy(p, "MagnetHigh"); p += 10; first = false; }
+        if (flags & SensorState::ERR_MAGNET_LOW) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "MagnetLow"); p += 9; first = false; }
+        if (flags & SensorState::ERR_MAGNET_MISSING) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "MagnetMissing"); p += 13; first = false; }
+        if (flags & SensorState::ERR_I2C_WATCHDOG) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "I2CWatchdog"); p += 11; first = false; }
+        if (flags & SensorState::ERR_DESYNC) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "Desync"); p += 6; first = false; }
+        if (flags & SensorState::ERR_RECOVERY_DESYNC) { if (!first) { *p++ = ','; *p++ = ' '; } strcpy(p, "RecDesync"); p += 9; first = false; }
+        strcpy(p, ")\r\n");
+    }
+    cdc_print(buf);
+}
+
 static void cmd_status() {
     if (!g_dbg_state) {
         cdc_print("ERR: No state\r\n");
         return;
     }
 
-    char buf[64];
+    char buf[128];
     char* p;
 
     cdc_print("=== LIVE STATUS ===\r\n");
@@ -280,18 +305,22 @@ static void cmd_status() {
     strcpy(p, "\r\n");
     cdc_print(buf);
 
-    p = buf; strcpy(p, "Err flags: "); p += 11;
-    p = uint_to_str(g_dbg_state->sensor.error_flags.load(), p);
-    strcpy(p, "\r\n");
-    cdc_print(buf);
+    uint8_t flags = g_dbg_state->sensor.error_flags.load();
+    print_error_flags(flags);
 
     p = buf; strcpy(p, "LED status: "); p += 12;
     p = uint_to_str(static_cast<uint8_t>(g_dbg_state->led_status.get()), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
+    uint8_t err_count = (g_error_log_write_idx - g_error_log_read_idx + ERROR_LOG_SIZE) % ERROR_LOG_SIZE;
+    p = buf; strcpy(p, "Logged errors: "); p += 15;
+    p = uint_to_str(err_count, p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+
     p = buf; strcpy(p, "Loop time (EMA): "); p += 17;
-    p = uint_to_str(g_dbg_state->sensor.loop_time_avg_us.load(), p);
+    p = uint_to_str(g_dbg_state->loop_time_avg_us.load(), p);
     strcpy(p, " us\r\n");
     cdc_print(buf);
 
@@ -310,7 +339,7 @@ static void cmd_status() {
     }
 
     p = buf; strcpy(p, "AGC: "); p += 5;
-    p = uint_to_str(g_dbg_state->agc_value.load(), p);
+    p = uint_to_str(g_dbg_state->sensor.agc_value.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 }
@@ -382,10 +411,60 @@ static void print_help() {
     cdc_print("  s               - Print live status\r\n");
     cdc_print("  c               - Print live calibration data\r\n");
     cdc_print("  e               - Print error log\r\n");
-    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccwz, center, angle)\r\n");
-    cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cw, ccw; idx: 0-4)\r\n");
+    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccz, center, angle)\r\n");
+    cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
     cdc_print("  cw              - Write live calibration data to flash\r\n");
     cdc_print("  help            - Print this help\r\n");
+}
+
+static void cmd_cs(int argc, char** argv) {
+    if (argc < 3) {
+        cdc_print("ERR: Usage: cs <var> <val>\r\n");
+        print_help();
+        return;
+    }
+    const char* var = argv[1];
+    if (strcmp(var, "cwl") == 0 || strcmp(var, "ccl") == 0) {
+        if (argc == 4) {
+            int idx = atoi(argv[2]);
+            int32_t val = atoi(argv[3]);
+            if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT) {
+                if (strcmp(var, "cwl") == 0) g_dbg_state->cal_state.cw_speed[idx] = val;
+                else g_dbg_state->cal_state.ccw_speed[idx] = val;
+                cdc_print("LUT updated.\r\n");
+            } else {
+                cdc_print("ERR: Invalid index\r\n");
+            }
+        } else {
+            cdc_print("ERR: Usage: cs <lut> <idx> <val>\r\n");
+            print_help();
+        }
+    } else {
+        int32_t val = atoi(argv[2]);
+        if (strcmp(var, "cwz") == 0) g_dbg_state->cal_state.cw_zero_pwm = val;
+        else if (strcmp(var, "ccz") == 0) g_dbg_state->cal_state.ccw_zero_pwm = val;
+        else if (strcmp(var, "center") == 0) g_dbg_state->cal_state.center_offset.store(val);
+        else if (strcmp(var, "angle") == 0) {
+            g_dbg_state->cal_state.wheel_angle_deg.store(val);
+            int32_t half_deg = val / 2;
+            int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
+            g_dbg_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
+        } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
+                   strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
+            uint16_t amin, amax, bmin, bmax;
+            g_dbg_pedals->get_calibration(amin, amax, bmin, bmax);
+            if (strcmp(var, "amin") == 0) amin = val;
+            else if (strcmp(var, "amax") == 0) amax = val;
+            else if (strcmp(var, "bmin") == 0) bmin = val;
+            else if (strcmp(var, "bmax") == 0) bmax = val;
+            g_dbg_pedals->set_calibration(amin, amax, bmin, bmax);
+        } else {
+            cdc_print("ERR: Unknown variable\r\n");
+            print_help();
+            return;
+        }
+        cdc_print("Updated.\r\n");
+    }
 }
 
 static void process_command(char* cmd) {
@@ -417,53 +496,7 @@ static void process_command(char* cmd) {
     } else if (strcmp(argv[0], "cw") == 0) {
         cmd_save_calibration();
     } else if (strcmp(argv[0], "cs") == 0) {
-        if (argc >= 3) {
-            const char* var = argv[1];
-            if (strcmp(var, "cw") == 0 || strcmp(var, "ccw") == 0) {
-                if (argc == 4) {
-                    int idx = atoi(argv[2]);
-                    int32_t val = atoi(argv[3]);
-                    if (idx >= 0 && idx < CAL_FORCE_LEVEL_COUNT) {
-                        if (strcmp(var, "cw") == 0) g_dbg_state->cal_luts.cw_speed[idx] = val;
-                        else g_dbg_state->cal_luts.ccw_speed[idx] = val;
-                        cdc_print("LUT updated.\r\n");
-                    } else {
-                        cdc_print("ERR: Invalid index\r\n");
-                    }
-                } else {
-                    cdc_print("ERR: Usage: cs <lut> <idx> <val>\r\n");
-                    print_help();
-                }
-            } else {
-                int32_t val = atoi(argv[2]);
-                if (strcmp(var, "cwz") == 0) g_dbg_state->cal_luts.cw_zero_pwm = val;
-                else if (strcmp(var, "ccwz") == 0) g_dbg_state->cal_luts.ccw_zero_pwm = val;
-                else if (strcmp(var, "center") == 0) g_dbg_state->center_offset.store(val);
-                else if (strcmp(var, "angle") == 0) {
-                    g_dbg_state->wheel_angle_deg.store(val);
-                    int32_t half_deg = val / 2;
-                    int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
-                    g_dbg_state->max_half_angle_counts.store(max_half_angle_counts);
-                } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
-                           strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
-                    uint16_t amin, amax, bmin, bmax;
-                    g_dbg_pedals->get_calibration(amin, amax, bmin, bmax);
-                    if (strcmp(var, "amin") == 0) amin = val;
-                    else if (strcmp(var, "amax") == 0) amax = val;
-                    else if (strcmp(var, "bmin") == 0) bmin = val;
-                    else if (strcmp(var, "bmax") == 0) bmax = val;
-                    g_dbg_pedals->set_calibration(amin, amax, bmin, bmax);
-                } else {
-                    cdc_print("ERR: Unknown variable\r\n");
-                    print_help();
-                    return;
-                }
-                cdc_print("Updated.\r\n");
-            }
-        } else {
-            cdc_print("ERR: Usage: cs <var> <val>\r\n");
-            print_help();
-        }
+        cmd_cs(argc, argv);
     } else {
         cdc_print("ERR: Unknown command.\r\n");
         print_help();
@@ -482,6 +515,7 @@ void debug_serial_update() {
     if (!connected) {
         g_prompt_printed = false;
         g_line_len = 0;
+        g_escape_state = 0;
         g_was_connected = false;
         return;
     }
@@ -504,13 +538,45 @@ void debug_serial_update() {
 
     char c = (char)tud_cdc_read_char();
 
+    if (g_escape_state == 1) {
+        if (c == '[') g_escape_state = 2;
+        else g_escape_state = 0;
+        return;
+    } else if (g_escape_state == 2) {
+        if (c == 'A') { // Arrow Up
+            // Clear current line
+            while (g_line_len > 0) {
+                cdc_print("\b \b");
+                g_line_len--;
+            }
+            // Copy last command
+            strcpy(g_line_buf, g_last_cmd_buf);
+            g_line_len = g_last_cmd_len;
+            g_line_buf[g_line_len] = '\0';
+            cdc_print(g_line_buf);
+        }
+        g_escape_state = 0;
+        return;
+    } else if (c == 0x1B) { // ESC
+        g_escape_state = 1;
+        return;
+    }
+
     if (c == '\r' || c == '\n') {
         cdc_print("\r\n");
         g_line_buf[g_line_len] = '\0';
         if (g_line_len > 0) {
+            strcpy(g_last_cmd_buf, g_line_buf);
+            g_last_cmd_len = g_line_len;
             process_command(g_line_buf);
             g_line_len = 0;
         }
+        if (g_prompt_printed) {
+            cdc_print("ffbserial: ");
+        }
+    } else if (c == 0x03) { // Ctrl-C
+        g_line_len = 0;
+        cdc_print("^C\r\n");
         if (g_prompt_printed) {
             cdc_print("ffbserial: ");
         }

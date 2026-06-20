@@ -162,7 +162,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     }
     
     if (!initial_read_ok) {
-        state.cal_luts.valid = false;
+        state.cal_state.valid = false;
         // If sensor is dead, we can't continue safely
         state.led_status.set(SystemStatus::FlashWriteFailed);
         while (true) {
@@ -174,11 +174,11 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     int32_t raw_center = parser.get_absolute_raw() & 0x0FFF;
     
     // Save to shared state and parser
-    state.center_offset.store(raw_center);
+    state.cal_state.center_offset.store(raw_center);
     parser.init();
     parser.set_center(raw_center);
 
-    CalibrationLUTs& luts = state.cal_luts;
+    CalibrationState& luts = state.cal_state;
     luts.valid = false;
     
     // Read initial state
@@ -262,17 +262,17 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
 
     // Save everything to flash
     FlashCalibrationData data;
-    data.center_position = state.center_offset.load();
+    data.center_position = state.cal_state.center_offset.load();
     data.accel_min = accel_min;
     data.accel_max = accel_max;
     data.brake_min = brake_min;
     data.brake_max = brake_max;
     
-    data.cw_zero_pwm = state.cal_luts.cw_zero_pwm;
-    data.ccw_zero_pwm = state.cal_luts.ccw_zero_pwm;
+    data.cw_zero_pwm = state.cal_state.cw_zero_pwm;
+    data.ccw_zero_pwm = state.cal_state.ccw_zero_pwm;
     for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-        data.cw_speed[i] = state.cal_luts.cw_speed[i];
-        data.ccw_speed[i] = state.cal_luts.ccw_speed[i];
+        data.cw_speed[i] = state.cal_state.cw_speed[i];
+        data.ccw_speed[i] = state.cal_state.ccw_speed[i];
     }
     data.wheel_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG;
 

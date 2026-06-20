@@ -9,7 +9,7 @@ struct FFBOutput {
 
 class FFBProcessor {
 public:
-    void init(const CalibrationLUTs* luts) { cal_luts_ = luts; }
+    void init(const CalibrationState* luts) { cal_luts_ = luts; }
 
     // Calculate the combined force output from all active effects.
     // position: wheel position in raw counts from center
@@ -19,7 +19,7 @@ public:
                         EffectState& effects, int32_t max_half_angle_counts);
 
 private:
-    const CalibrationLUTs* cal_luts_ = nullptr;
+    const CalibrationState* cal_luts_ = nullptr;
 
     // Effect calculators — all return force in -10000..+10000 range
     int32_t calc_constant_force(const EffectSlot& e);

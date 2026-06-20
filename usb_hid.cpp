@@ -94,7 +94,7 @@ void usb_hid_send_input_report(SharedState& state) {
     report.reportId = 0x01;
     report.buttons  = state.buttons.load();
     int32_t pos = state.sensor.wheel_position.load();
-    int32_t max_half_angle_counts = state.max_half_angle_counts.load();
+    int32_t max_half_angle_counts = state.cal_state.max_half_angle_counts.load();
     if (pos > max_half_angle_counts) pos = max_half_angle_counts;
     else if (pos < -max_half_angle_counts) pos = -max_half_angle_counts;
 

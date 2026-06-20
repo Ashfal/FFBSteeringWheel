@@ -54,22 +54,22 @@ int main() {
     bool has_flash = g_flash.load(cal_data);
 
     if (has_flash) {
-        g_shared_state.center_offset.store(cal_data.center_position);
+        g_shared_state.cal_state.center_offset.store(cal_data.center_position);
         g_pedals.set_calibration(cal_data.accel_min, cal_data.accel_max,
                                  cal_data.brake_min, cal_data.brake_max);
                                  
         int32_t half_angle_deg = cal_data.wheel_angle_deg / 2;
         int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        g_shared_state.max_half_angle_counts.store(max_half_angle_counts);
-        g_shared_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
+        g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
+        g_shared_state.cal_state.wheel_angle_deg.store(cal_data.wheel_angle_deg);
                                  
-        g_shared_state.cal_luts.cw_zero_pwm = cal_data.cw_zero_pwm;
-        g_shared_state.cal_luts.ccw_zero_pwm = cal_data.ccw_zero_pwm;
+        g_shared_state.cal_state.cw_zero_pwm = cal_data.cw_zero_pwm;
+        g_shared_state.cal_state.ccw_zero_pwm = cal_data.ccw_zero_pwm;
         for (int i = 0; i < CAL_FORCE_LEVEL_COUNT; i++) {
-            g_shared_state.cal_luts.cw_speed[i] = cal_data.cw_speed[i];
-            g_shared_state.cal_luts.ccw_speed[i] = cal_data.ccw_speed[i];
+            g_shared_state.cal_state.cw_speed[i] = cal_data.cw_speed[i];
+            g_shared_state.cal_state.ccw_speed[i] = cal_data.ccw_speed[i];
         }
-        g_shared_state.cal_luts.valid = true;
+        g_shared_state.cal_state.valid = true;
 
         g_shared_state.led_status.set(SystemStatus::BootWait);
     } else {
@@ -78,8 +78,8 @@ int main() {
         
         int32_t half_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG / 2;
         int32_t max_half_angle_counts = (half_angle_deg * WHEEL_COUNTS_PER_REV) / 360;
-        g_shared_state.max_half_angle_counts.store(max_half_angle_counts);
-        g_shared_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
+        g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
+        g_shared_state.cal_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
 
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
         debug_log_error(SystemStatus::FlashCalMissing);

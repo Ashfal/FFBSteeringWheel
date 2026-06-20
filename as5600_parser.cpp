@@ -22,7 +22,7 @@ void AS5600Parser::init() {
     last_time_us_ = time_us_64();
 }
 
-bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
+bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle, bool is_recovery) {
     // ---- EARLY EXIT: Hardware Error Check ----
     // MH (bit 3) = magnet too strong
     // ML (bit 4) = magnet too weak
@@ -30,16 +30,16 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
     error_flags_ = 0;
 
     if (status_reg & AS5600_STATUS_MH) {
-        error_flags_ |= 0x01;  // ERR_MAGNET_HIGH
+        error_flags_ |= SensorState::ERR_MAGNET_HIGH;
     }
     if (status_reg & AS5600_STATUS_ML) {
-        error_flags_ |= 0x02;  // ERR_MAGNET_LOW
+        error_flags_ |= SensorState::ERR_MAGNET_LOW;
     }
     if (!(status_reg & AS5600_STATUS_MD)) {
-        error_flags_ |= 0x04;  // ERR_MAGNET_MISSING
+        error_flags_ |= SensorState::ERR_MAGNET_MISSING;
     }
 
-    if (error_flags_ & 0x04) {
+    if (error_flags_ & SensorState::ERR_MAGNET_MISSING) {
         // Fatal hardware error (Magnet Missing) — do NOT update position or velocity.
         // We allow the frame to process if only MH or ML warnings are present, 
         // because the motor's own magnetic field can trigger them at high PWM.
@@ -98,7 +98,7 @@ bool AS5600Parser::update(uint8_t status_reg, uint16_t raw_angle) {
 
         // ---- Filter Impossible Physics Jumps ----
         if (inst_velocity_cps > MAX_PHYSICAL_DELTA_CPS || inst_velocity_cps < -MAX_PHYSICAL_DELTA_CPS) {
-            if (error_flags_ & SensorState::ERR_I2C_WATCHDOG) { //is recovery
+            if (is_recovery) {
                 error_flags_ |= SensorState::ERR_RECOVERY_DESYNC;
                 return false;
             }

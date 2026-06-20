@@ -9,7 +9,7 @@ public:
     // Called from DMA interrupt with raw I2C data.
     // Returns true if data is valid (no hardware error).
     // On hardware error, flags the error and returns false.
-    bool update(uint8_t status_reg, uint16_t raw_angle);
+    bool update(uint8_t status_reg, uint16_t raw_angle, bool is_recovering = false);
 
     int32_t get_position() const { return accumulated_position_; }
     int32_t get_velocity() const { return filtered_velocity_cps_; }

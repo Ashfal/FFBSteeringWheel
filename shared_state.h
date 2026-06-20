@@ -11,9 +11,9 @@
 
 struct SensorState {
     std::atomic<int32_t>  wheel_position{0};     // Accumulated raw counts from center
-    std::atomic<int32_t>    wheel_velocity{0};     // Filtered counts / sec (signed)
+    std::atomic<int32_t>  wheel_velocity{0};     // Filtered counts / sec (signed)
     std::atomic<int32_t>  absolute_raw_angle{0}; // Total absolute raw counts ignoring center offset
-    std::atomic<uint32_t> loop_time_avg_us{0};   // Exponential moving average of FFB loop execution time
+    std::atomic<uint8_t>  agc_value{0};          // Auto Gain Control value
     std::atomic<uint8_t>  error_flags{0};        // Bit 0: MH, Bit 1: ML, Bit 2: MD missing
 
     // Error flag bits
@@ -83,7 +83,7 @@ struct EffectState {
 // Calibration Data (shared, written by Core 1 calibration routine)
 // =========================================================================
 
-struct CalibrationLUTs {
+struct CalibrationState {
     // Speed LUT: expected maximum raw velocity at each force level
     // Index corresponds to CAL_FORCE_LEVELS[]
     int32_t  cw_speed[CAL_FORCE_LEVEL_COUNT];
@@ -94,13 +94,17 @@ struct CalibrationLUTs {
     uint16_t ccw_zero_pwm;
 
     bool     valid = false;
+
+    std::atomic<int32_t> center_offset{0};
+    std::atomic<int32_t> max_half_angle_counts{12288};
+    std::atomic<int32_t> wheel_angle_deg{1080};
 };
 
 // =========================================================================
 // LED Status (shared, written by both cores)
 // =========================================================================
 
-struct StatusState {
+struct LEDState {
     std::atomic<uint8_t> status{0};
     std::atomic<uint8_t> min_cycles_remaining{0};
     std::atomic<bool>    clear_pending{false};
@@ -168,12 +172,10 @@ struct StatusState {
 struct SharedState {
     SensorState      sensor;
     EffectState      ffb;
-    CalibrationLUTs  cal_luts;
-    StatusState      led_status;
+    CalibrationState cal_state;
+    LEDState         led_status;
 
-    std::atomic<int32_t> center_offset{0}; // Read by Core 1 on boot
-    std::atomic<int32_t> max_half_angle_counts{12288};
-    std::atomic<int32_t> wheel_angle_deg{1080};
+    std::atomic<uint32_t> loop_time_avg_us{0};   // Exponential moving average of FFB loop execution time
 
     // Button state (Core 0 only writes, Core 0 only reads for USB)
     std::atomic<uint16_t> buttons{0};
@@ -184,5 +186,4 @@ struct SharedState {
 
     // Debug serial: one-shot AGC register read request
     std::atomic<bool>    request_agc_read{false};
-    std::atomic<uint8_t> agc_value{0};
 };

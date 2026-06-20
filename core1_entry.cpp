@@ -60,13 +60,14 @@ static void dma_isr() {
     uint16_t angle = (static_cast<uint16_t>(raw_data[1]) << 8) | raw_data[2];
 
     // 1. Parse Sensor
-    bool valid = g_parser.update(status, angle);
+    uint8_t wd_flag = g_state->sensor.error_flags.load() & SensorState::ERR_I2C_WATCHDOG;
+    bool valid = g_parser.update(status, angle, wd_flag != 0);
     
     // Update shared state
     g_state->sensor.wheel_position.store(g_parser.get_position());
     g_state->sensor.wheel_velocity.store(g_parser.get_velocity());
     g_state->sensor.absolute_raw_angle.store(g_parser.get_absolute_raw());
-    g_state->sensor.error_flags.store(g_parser.get_error_flags());
+    g_state->sensor.error_flags.store(g_parser.get_error_flags() | wd_flag);
 
     if (!valid) {
         // Transient EMI tolerance: only kill the motor after N consecutive bad reads.
@@ -114,7 +115,7 @@ static void dma_isr() {
     FFBOutput out = g_ffb.calculate(g_parser.get_position(),
                                     g_parser.get_velocity(),
                                     g_state->ffb,
-                                    g_state->max_half_angle_counts.load());
+                                    g_state->cal_state.max_half_angle_counts.load());
 
     // 3. Motor Control
     g_motor.set_force(out.force, g_parser.get_velocity());
@@ -128,7 +129,7 @@ static void dma_isr() {
         if (ret == 1) {
             ret = i2c_read_blocking(I2C_PORT, AS5600_I2C_ADDR, &agc_val, 1, false);
             if (ret == 1) {
-                g_state->agc_value.store(agc_val);
+                g_state->sensor.agc_value.store(agc_val);
             }
         }
         g_state->request_agc_read.store(false);
@@ -143,7 +144,7 @@ static void dma_isr() {
     } else {
         loop_time_ema_scaled = loop_time_ema_scaled - (loop_time_ema_scaled >> 4) + duration;
     }
-    g_state->sensor.loop_time_avg_us.store(loop_time_ema_scaled >> 4, std::memory_order_relaxed);
+    g_state->loop_time_avg_us.store(loop_time_ema_scaled >> 4, std::memory_order_relaxed);
 }
 
 // =========================================================================
@@ -186,11 +187,11 @@ void core1_main() {
     g_motor.init();
 
     // Apply flash calibration center
-    g_parser.set_center(g_state->center_offset.load());
-    g_ffb.init(&g_state->cal_luts);
+    g_parser.set_center(g_state->cal_state.center_offset.load());
+    g_ffb.init(&g_state->cal_state);
     
     // Apply friction compensation from LUTs
-    g_motor.set_calibration_zero(g_state->cal_luts.cw_zero_pwm, g_state->cal_luts.ccw_zero_pwm);
+    g_motor.set_calibration_zero(g_state->cal_state.cw_zero_pwm, g_state->cal_state.ccw_zero_pwm);
 
     core1_init_interrupts();
     multicore_lockout_victim_init();
@@ -224,6 +225,7 @@ void core1_main() {
         if (now - last_loop > I2C_WATCHDOG_TIMEOUT_US) {
 
             debug_log_error(SystemStatus::I2CWatchdogFired);
+            g_state->sensor.error_flags.fetch_or(SensorState::ERR_I2C_WATCHDOG);
             
             if (watchdog_fault_acc < 50) {
                 watchdog_fault_acc += 5; // 10 consecutive failures = 50 penalty points (~50ms)
@@ -253,6 +255,7 @@ void core1_main() {
                 if (watchdog_fault_acc == 0) {
                     // Fully recovered, clear error state
                     g_state->led_status.clear(SystemStatus::I2CWatchdogFired);
+                    g_state->sensor.error_flags.fetch_and(~SensorState::ERR_I2C_WATCHDOG);
                 }
             }
         }

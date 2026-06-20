@@ -23,6 +23,6 @@ private:
     uint8_t    flashes_done_ = 0;      // How many flashes completed so far
     uint8_t    current_code_ = 0;      // Currently displaying code
     
-    StatusState* status_state_ptr_ = nullptr;
+    LEDState* status_state_ptr_ = nullptr;
     bool       rapid_flash_state_ = false;
 };
