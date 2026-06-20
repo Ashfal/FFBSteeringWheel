@@ -155,8 +155,9 @@ static int64_t timer_callback(alarm_id_t id, void *user_data) {
     // Trigger the next I2C read
     g_i2c.start_read();
     
-    // Return positive interval to reschedule automatically in microseconds
-    return I2C_READ_INTERVAL_US;
+    // Return negative interval to reschedule automatically with absolute timing.
+    // CRITICAL: Cast to int64_t BEFORE negating. Negating a uint32_t wraps to a huge positive number!
+    return -static_cast<int64_t>(I2C_READ_INTERVAL_US);
 }
 
 // =========================================================================
@@ -212,7 +213,16 @@ void core1_main() {
         }
 
         uint64_t now = time_us_64();
-        if (now - g_last_loop_time_us > I2C_WATCHDOG_TIMEOUT_US) {
+        
+        // Safely read the 64-bit variable that is updated by the DMA ISR.
+        // On a 32-bit core, a 64-bit read takes two instructions and can be interrupted,
+        // leading to a torn read (e.g., crossing a 32-bit wrap boundary).
+        uint64_t last_loop;
+        do {
+            last_loop = g_last_loop_time_us;
+        } while (last_loop != g_last_loop_time_us);
+
+        if (now - last_loop > I2C_WATCHDOG_TIMEOUT_US) {
             // Watchdog fired! Loop stalled.
             if (!in_error_state) {
                 // Only stop the motor and set the LED on the initial fault detection

@@ -24,9 +24,18 @@ void ButtonReader::init() {
     gpio_set_function(PIN_SPI_SCK, GPIO_FUNC_SPI);
     gpio_set_function(PIN_SPI_RX,  GPIO_FUNC_SPI);
 
+    // Limit SCK drive strength and slew rate to reduce EMI/ringing
+    gpio_set_drive_strength(PIN_SPI_SCK, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_slew_rate(PIN_SPI_SCK, GPIO_SLEW_RATE_SLOW);
+
     // Latch pin — manual GPIO
     gpio_init(PIN_SPI_LATCH);
     gpio_set_dir(PIN_SPI_LATCH, GPIO_OUT);
+    
+    // Limit LATCH drive strength and slew rate as well
+    gpio_set_drive_strength(PIN_SPI_LATCH, GPIO_DRIVE_STRENGTH_2MA);
+    gpio_set_slew_rate(PIN_SPI_LATCH, GPIO_SLEW_RATE_SLOW);
+    
     gpio_put(PIN_SPI_LATCH, 0);
 
     // Claim DMA channels

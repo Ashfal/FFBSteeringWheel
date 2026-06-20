@@ -86,7 +86,7 @@ int main() {
     }
     
     // Preload true button state
-    for (int i = 0; i < DEBOUNCE_READS; i++) {
+    for (int i = 0; i < DEBOUNCE_READS + 1; i++) {
         g_buttons.update();
         sleep_us(BUTTON_UPDATE_INTERVAL_US);
     }
