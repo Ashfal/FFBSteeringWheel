@@ -204,8 +204,7 @@ void core1_main() {
     g_i2c.start_read();
 
     // Background Watchdog Loop
-    bool in_error_state = false;
-    uint32_t recovery_success_count = 0;
+    uint8_t watchdog_fault_acc = 0; // Leaky bucket: +5 on failure, -1 on success
     while (true) {
         if (g_fatal_error) {
             sleep_ms(100);
@@ -223,15 +222,18 @@ void core1_main() {
         } while (last_loop != g_last_loop_time_us);
 
         if (now - last_loop > I2C_WATCHDOG_TIMEOUT_US) {
-            // Watchdog fired! Loop stalled.
-            if (!in_error_state) {
-                // Only stop the motor and set the LED on the initial fault detection
-                g_motor.stop();
-                g_state->led_status.set(SystemStatus::I2CWatchdogFired);
-                debug_log_error(SystemStatus::I2CWatchdogFired);
-                in_error_state = true;
+
+            debug_log_error(SystemStatus::I2CWatchdogFired);
+            
+            if (watchdog_fault_acc < 50) {
+                watchdog_fault_acc += 5; // 10 consecutive failures = 50 penalty points (~50ms)
+                if (watchdog_fault_acc >= 50) {
+                    watchdog_fault_acc = 50; // Cap at max
+                    // Stop motor and set LED on threshold crossing
+                    g_motor.stop();
+                    g_state->led_status.set(SystemStatus::I2CWatchdogFired);
+                }
             }
-            recovery_success_count = 0; // Reset success counter on any fault
 
             // Cancel the 1ms alarm to prevent start_read() firing mid-reset
             alarm_pool_cancel_alarm(g_alarm_pool, g_timer_alarm);
@@ -246,12 +248,11 @@ void core1_main() {
             // Wait a moment for the next alarm to fire and attempt a read
             sleep_ms(5);
         } else {
-            if (in_error_state) {
-                recovery_success_count++;
-                if (recovery_success_count > 50) { // 50 loops * 2ms = 100ms of stability
-                    // We successfully recovered! The 1ms timer fired and ISR completed consistently.
+            if (watchdog_fault_acc > 0) {
+                watchdog_fault_acc--; // 1 penalty point removed per successful loop (~2ms) -> 100ms to fully recover
+                if (watchdog_fault_acc == 0) {
+                    // Fully recovered, clear error state
                     g_state->led_status.clear(SystemStatus::I2CWatchdogFired);
-                    in_error_state = false;
                 }
             }
         }
