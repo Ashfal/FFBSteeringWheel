@@ -24,7 +24,7 @@ Core 0 (main.cpp)                    Core 1 (core1_entry.cpp)
 │   ├── Pedals at 2000Hz (ADC)       ├── Calibration (blocking, runs before ISR enabled)
 │   ├── Buttons at 500Hz (SPI DMA)   └── Background watchdog loop
 │   └── LED status at 100Hz
-├── USB HID reports at 100Hz
+├── USB HID reports at 1000Hz
 ├── Boot button wait & flash cal
 └── Flash storage (flash_safe_execute)
 
@@ -79,7 +79,7 @@ If Run Calibration:
 - Pedal sampling (ADC) at 2000Hz (every 0.5ms)
 - Button sampling (SPI DMA) at 500Hz (every 2ms) — provides 8ms debounce window (4-read)
 - LED status updates at 100Hz (every 10ms)
-- USB HID input reports at 100Hz (every 10ms)
+- USB HID input reports at 1000Hz (every 1ms)
 - `sleep_us(250)` per iteration to prevent pegging Core 0
 
 ## Core Development Rules
@@ -185,7 +185,7 @@ All tunable parameters live in `config.h`. This includes:
 - **5ms:** Watchdog timeout threshold (`I2C_WATCHDOG_TIMEOUT_US`) — triggers bus recovery attempt
 - **~50ms:** Leaky-bucket threshold before motor kill (10 consecutive watchdog timeouts)
 - **0.5ms / 2ms:** Decoupled input sampling intervals (pedals at 2000Hz, buttons at 500Hz)
-- **10ms:** USB HID input report rate (100Hz)
+- **1ms:** USB HID input report rate (1000Hz)
 - **50µs:** Dead-time between H-bridge direction changes
 - **250µs:** Core 0 main loop sleep (keeps `tud_task()` responsive at >1kHz)
 - Use `time_us_64()` for all duration/delta calculations (never `time_us_32()` — wraps at 71.5 minutes)

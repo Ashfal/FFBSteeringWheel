@@ -62,9 +62,8 @@ constexpr uint16_t FORWARD_MAX_PWM       = 3124;   // Software limit for FFB max
 constexpr uint32_t FORCE_SCALE_PERCENT   = 100;
 
 // Fade in static friction compensation
-constexpr uint16_t FRICTION_FADE_FORCE   = 150; 
+constexpr uint16_t FRICTION_FADE_FORCE   = 50; 
 constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
-constexpr uint16_t BACKDRIVE_FADE_FORCE  = 1000;
 
 // =========================================================================
 // MOTOR SAFETY (Stall Governor)
@@ -150,6 +149,8 @@ constexpr uint32_t PEDAL_UPDATE_INTERVAL_US = 500;  // 0.5ms (2000 Hz)
 // LED STATUS CONTROLLER
 // =========================================================================
 
+constexpr uint32_t LED_UPDATE_INTERVAL_US = 10000; // 100 Hz (10ms)
+constexpr uint32_t LED_UPDATE_INTERVAL_MS = LED_UPDATE_INTERVAL_US / 1000;
 constexpr uint32_t LED_FLASH_ON_MS       = 200;
 constexpr uint32_t LED_FLASH_OFF_MS      = 500;
 constexpr uint32_t LED_PAUSE_MS          = 2000;
@@ -206,6 +207,7 @@ constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 5000;  // 5 ms — motor kill if mi
 
 constexpr uint16_t USB_VID               = 0xCAFE;
 constexpr uint16_t USB_PID               = 0x4003;
+constexpr uint32_t USB_REPORT_INTERVAL_US = 1000;
 
 // =========================================================================
 // STATUS / ERROR CODES  (LED flash code = enum value)

@@ -22,8 +22,7 @@ void LEDController::init(SharedState& state) {
 void LEDController::sleep_ms(uint32_t ms) {
     while (ms > 0) {
         update();
-        // Step in 10ms chunks (or less) to accurately catch RapidFlash (50ms) edges
-        uint32_t step = (ms > 10) ? 10 : ms;
+        uint32_t step = (ms > LED_UPDATE_INTERVAL_MS) ? LED_UPDATE_INTERVAL_MS : ms;
         ::sleep_ms(step); // Use :: to call the global Pico SDK function, not ourselves!
         ms -= step;
     }

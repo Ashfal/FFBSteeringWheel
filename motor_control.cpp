@@ -78,7 +78,7 @@ void MotorControl::set_force(int32_t force, int32_t velocity) {
 
     if (safe_max_pwm <= zero_pwm){
         // Backdriving force scaling
-        pwm = (abs_force * safe_max_pwm) / BACKDRIVE_FADE_FORCE;
+        pwm = (abs_force * safe_max_pwm) / FRICTION_FADE_FORCE;
     } else if (abs_force < FRICTION_FADE_FORCE){
         // Static friction compensation
         pwm = (abs_force * zero_pwm) / FRICTION_FADE_FORCE;

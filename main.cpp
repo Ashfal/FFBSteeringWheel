@@ -158,6 +158,7 @@ int main() {
     uint64_t last_usb_report_time_us = 0;
     uint64_t last_pedal_read_time_us = 0;
     uint64_t last_button_read_time_us = 0;
+    uint64_t last_led_update_time_us = 0;
 
     // Main Loop
     while (true) {
@@ -185,11 +186,14 @@ int main() {
             last_button_read_time_us = now_us;
         }
 
-        // Send joystick report at 100Hz (10ms)
-        if (now_us - last_usb_report_time_us >= 10000) {
-            // Update LED at the same low frequency as the HID report
+        // Update LED at LED_UPDATE_INTERVAL_US (10ms)
+        if (now_us - last_led_update_time_us >= LED_UPDATE_INTERVAL_US) {
             g_led.update();
-            
+            last_led_update_time_us = now_us;
+        }
+
+        // Send joystick report
+        if (now_us - last_usb_report_time_us >= USB_REPORT_INTERVAL_US) {
             usb_hid_send_input_report(g_shared_state);
             last_usb_report_time_us = now_us;
         }

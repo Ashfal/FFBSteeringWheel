@@ -212,7 +212,7 @@ static void build_config_descriptor() {
                               TUSB_DESC_CONFIG_ATT_REMOTE_WAKEUP, 100),
         TUD_HID_DESCRIPTOR(ITF_NUM_HID, 0, HID_ITF_PROTOCOL_NONE,
                            COMBINED_REPORT_DESC_SIZE, EPNUM_HID,
-                           CFG_TUD_HID_EP_BUFSIZE, 1),
+                           CFG_TUD_HID_EP_BUFSIZE, (uint8_t)(USB_REPORT_INTERVAL_US / 1000)),
         TUD_CDC_DESCRIPTOR(ITF_NUM_CDC, 4, EPNUM_CDC_NOTIF, 8,
                            EPNUM_CDC_OUT, EPNUM_CDC_IN, 64)
     };
