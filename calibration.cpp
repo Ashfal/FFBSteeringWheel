@@ -153,7 +153,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     parser.init();
     motor.init(&state.cal_state);
 
-    state.led_status.set(SystemStatus::MotorSweepsActive);
+    state.led_status.force(SystemStatus::MotorSweepsActive);
     led.update();
     
     // 1. Grab absolute raw center
@@ -215,7 +215,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
     state.led_status.clear(SystemStatus::MotorSweepsActive);
 
     // 3. Pedal Calibration Phase
-    state.led_status.set(SystemStatus::PedalCalActive);
+    state.led_status.force(SystemStatus::PedalCalActive);
 
     // Let's just track min/max for pedals
     uint16_t accel_min = 4095, accel_max = 0;
