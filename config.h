@@ -45,6 +45,34 @@ constexpr int32_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 // Physical wheel range default: 1080° total → ±540° from center
 constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 
+// =========================================================================
+// CALIBRATION & PHYSICS TUNING
+// =========================================================================
+
+constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
+
+// Flash calibration version
+constexpr uint32_t FLASH_DATA_VERSION    = 4;
+
+// Overpower Detection
+constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
+// Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
+constexpr int32_t VELOCITY_MARGIN_CPS        = 5000;       // Safety margin (counts/sec) for imperfect LUT readings
+
+// Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
+// Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
+constexpr int32_t  CAL_FORCE_LEVELS[]    = {
+    500,
+    800,
+    1000,
+    1500,
+    2500,
+};
+constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = sizeof(CAL_FORCE_LEVELS) / sizeof(CAL_FORCE_LEVELS[0]);
+
+// Minimum sweep distance during calibration
+constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 16;
+constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
 
 // =========================================================================
 // MOTOR CONFIGURATION
@@ -62,7 +90,7 @@ constexpr uint16_t FORWARD_MAX_PWM       = 3124;   // Software limit for FFB max
 constexpr uint32_t FORCE_SCALE_PERCENT   = 100;
 
 // Fade in static friction compensation
-constexpr uint16_t FRICTION_FADE_FORCE   = 50; 
+constexpr uint16_t FRICTION_FADE_FORCE   = 150; 
 constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
 
 // =========================================================================
@@ -94,6 +122,8 @@ constexpr int32_t MAX_SAFE_VELOCITY_CPS      = 19000; // ~140 RPM. PWM reduced t
 
 constexpr uint8_t  I2C_INSTANCE         = (PIN_I2C_SDA / 2) % 2;
 constexpr uint32_t I2C_FREQ_HZ           = 100000;  // 100 kHz
+constexpr uint32_t I2C_READ_INTERVAL_US  = 1000;    // 1 ms
+constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 5000;  // 5 ms — motor kill if missed
 
 constexpr uint8_t  AS5600_I2C_ADDR       = 0x36;
 constexpr uint8_t  AS5600_REG_CONF       = 0x07;
@@ -160,54 +190,13 @@ constexpr uint32_t LED_RAPID_FLASH_MS    = 50;
 constexpr uint8_t  LED_MIN_DISPLAY_CYCLES = 2;
 
 // =========================================================================
-// FFB CONFIGURATION
-// =========================================================================
-
-constexpr uint8_t  MAX_EFFECTS           = 40;
-
-// =========================================================================
-// CALIBRATION & PHYSICS TUNING
-// =========================================================================
-
-constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
-
-// Flash calibration version
-constexpr uint32_t FLASH_DATA_VERSION    = 4;
-
-// Overpower Detection
-constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
-// Increased margin from 2000 to 8000 to prevent closed-loop oscillation caused by imperfect LUTs
-constexpr int32_t VELOCITY_MARGIN_CPS        = 5000;       // Safety margin (counts/sec) for imperfect LUT readings
-
-// Force levels for speed LUT calibration sweeps (raw -10000 to +10000 scale)
-// Scaled to stay under the 140 RPM speed limiter (to get an accurate curve)
-constexpr int32_t  CAL_FORCE_LEVELS[]    = {
-    500,
-    800,
-    1000,
-    1500,
-    2500,
-};
-constexpr uint8_t  CAL_FORCE_LEVEL_COUNT = sizeof(CAL_FORCE_LEVELS) / sizeof(CAL_FORCE_LEVELS[0]);
-
-// Minimum sweep distance during calibration
-constexpr int16_t  CAL_ZERO_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV / 16;
-constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
-
-// =========================================================================
-// I2C DMA / WATCHDOG TIMING
-// =========================================================================
-
-constexpr uint32_t I2C_READ_INTERVAL_US  = 1000;    // 1 ms
-constexpr uint32_t I2C_WATCHDOG_TIMEOUT_US = 5000;  // 5 ms — motor kill if missed
-
-// =========================================================================
-// USB
+// USB & FFB CONFIGURATION
 // =========================================================================
 
 constexpr uint16_t USB_VID               = 0xCAFE;
 constexpr uint16_t USB_PID               = 0x4003;
 constexpr uint32_t USB_REPORT_INTERVAL_US = 1000;
+constexpr uint8_t  MAX_EFFECTS           = 40;
 
 // =========================================================================
 // STATUS / ERROR CODES  (LED flash code = enum value)
