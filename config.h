@@ -39,11 +39,11 @@ constexpr uint8_t PIN_LED             = 22;
 // Gear ratio 1:2 → 8192 encoder counts per wheel revolution
 // All angles expressed in raw encoder counts, NOT degrees.
 
-constexpr int32_t ENCODER_COUNTS_PER_REV  = 4096;
-constexpr int32_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
+constexpr uint16_t ENCODER_COUNTS_PER_REV  = 4096;
+constexpr uint16_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 
 // Physical wheel range default: 1080° total → ±540° from center
-constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
+constexpr uint16_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 
 // =========================================================================
 // CALIBRATION & PHYSICS TUNING
@@ -52,7 +52,7 @@ constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
 // Flash calibration version
-constexpr uint32_t FLASH_DATA_VERSION    = 4;
+constexpr uint8_t FLASH_DATA_VERSION    = 5;
 
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition
@@ -83,15 +83,11 @@ constexpr int16_t  CAL_FORCE_MIN_SWEEP_COUNTS  = WHEEL_COUNTS_PER_REV;
 // Duty cycle range: 0 to PWM_WRAP (6249)
 
 constexpr uint16_t PWM_WRAP              = 6249;   // TOP value, duty 0..6249
-constexpr uint16_t FORWARD_MAX_PWM       = 3124;   // Software limit for FFB max force
 
-// Artificial boost to weak forces to make the wheel feel "punchier".
-// 100 = Linear (Accurate physics). >100 = Aggressive/Punchy (compresses dynamic range).
-constexpr uint32_t FORCE_SCALE_PERCENT   = 100;
-
-// Fade in static friction compensation
-constexpr uint16_t FRICTION_FADE_FORCE   = 150; 
-constexpr uint16_t DYNAMIC_FORCE         = 10000 - FRICTION_FADE_FORCE;
+// Default values (now stored in flash)
+constexpr uint16_t DEFAULT_FORWARD_MAX_PWM       = 3124;
+constexpr uint32_t DEFAULT_FORCE_SCALE_PERCENT   = 100;
+constexpr uint16_t DEFAULT_FRICTION_FADE_FORCE   = 150;
 
 // =========================================================================
 // MOTOR SAFETY (Stall Governor)

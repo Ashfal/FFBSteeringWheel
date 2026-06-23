@@ -3,9 +3,6 @@
 #include "config.h"
 #include "shared_state.h"
 
-struct FFBOutput {
-    int32_t force;
-};
 
 class FFBProcessor {
 public:
@@ -15,8 +12,8 @@ public:
     // position: wheel position in raw counts from center
     // velocity: raw counts per sec (signed)
     // effects: snapshot of current effect state (caller holds spinlock)
-    FFBOutput calculate(int32_t position, int32_t velocity,
-                        EffectState& effects, int32_t max_half_angle_counts);
+    int16_t calculate(int32_t position, int32_t velocity,
+                      EffectState& effects, int32_t max_half_angle_counts);
 
 private:
     const CalibrationState* cal_luts_ = nullptr;

@@ -120,13 +120,13 @@ static void dma_isr() {
     g_state->led_status.clear(SystemStatus::MagnetLow);
 
     // 2. FFB Processing
-    FFBOutput out = g_ffb.calculate(g_parser.get_position(),
+    int16_t force = g_ffb.calculate(g_parser.get_position(),
                                     g_parser.get_velocity(),
                                     g_state->ffb,
                                     g_state->cal_state.max_half_angle_counts.load());
 
     // 3. Motor Control
-    g_motor.set_force(out.force, g_parser.get_velocity());
+    g_motor.set_force(force, g_parser.get_velocity());
 
     // 4. One-shot AGC register read (requested by debug serial on Core 0)
     if (g_state->request_agc_read.load()) {
@@ -195,7 +195,7 @@ void core1_main() {
         halt_core1(SystemStatus::EncoderConfWriteFailed);
     }
     g_parser.init();
-    g_motor.init();
+    g_motor.init(&g_state->cal_state);
 
     // Apply flash calibration center
     g_parser.set_center(g_state->cal_state.center_offset.load());

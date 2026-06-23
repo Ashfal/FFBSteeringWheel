@@ -95,10 +95,13 @@ struct CalibrationState {
 
     std::atomic<bool>     valid{false};
 
-    std::atomic<int32_t> center_offset{0};
-    std::atomic<int32_t> max_half_angle_counts{12288};
-    std::atomic<int32_t> wheel_angle_deg{1080};
-    std::atomic<int32_t> system_damper_strength{0};
+    std::atomic<int16_t> center_offset{0};
+    std::atomic<uint32_t> max_half_angle_counts{12288};
+    std::atomic<uint16_t> wheel_angle_deg{1080};
+    std::atomic<uint16_t> system_damper_strength{0};
+    std::atomic<uint16_t> forward_max_pwm{0};
+    std::atomic<uint16_t> force_scale_percent{100};
+    std::atomic<uint16_t> friction_fade_force{150};
 };
 
 // =========================================================================

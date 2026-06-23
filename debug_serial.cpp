@@ -162,12 +162,27 @@ static void cmd_calibration() {
     cdc_print(buf);
     
     p = buf; strcpy(p, "Wheel Angle (deg): "); p += 19;
-    p = int_to_str(g_dbg_state->cal_state.wheel_angle_deg.load(), p);
+    p = uint_to_str(g_dbg_state->cal_state.wheel_angle_deg.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
     p = buf; strcpy(p, "System Damper: "); p += 15;
-    p = int_to_str(g_dbg_state->cal_state.system_damper_strength.load(), p);
+    p = uint_to_str(g_dbg_state->cal_state.system_damper_strength.load(), p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+
+    p = buf; strcpy(p, "Forward Max PWM: "); p += 17;
+    p = uint_to_str(g_dbg_state->cal_state.forward_max_pwm.load(), p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+
+    p = buf; strcpy(p, "Force Scale %: "); p += 15;
+    p = uint_to_str(g_dbg_state->cal_state.force_scale_percent.load(), p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+
+    p = buf; strcpy(p, "Friction Fade Force: "); p += 21;
+    p = uint_to_str(g_dbg_state->cal_state.friction_fade_force.load(), p);
     strcpy(p, "\r\n");
     cdc_print(buf);
 
@@ -227,6 +242,9 @@ static void cmd_save_calibration() {
     data.center_position = g_dbg_state->cal_state.center_offset.load();
     data.wheel_angle_deg = g_dbg_state->cal_state.wheel_angle_deg.load();
     data.system_damper_strength = g_dbg_state->cal_state.system_damper_strength.load();
+    data.forward_max_pwm = g_dbg_state->cal_state.forward_max_pwm.load();
+    data.force_scale_percent = g_dbg_state->cal_state.force_scale_percent.load();
+    data.friction_fade_force = g_dbg_state->cal_state.friction_fade_force.load();
     g_dbg_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
     data.cw_zero_pwm = g_dbg_state->cal_state.cw_zero_pwm.load();
     data.ccw_zero_pwm = g_dbg_state->cal_state.ccw_zero_pwm.load();
@@ -413,13 +431,22 @@ static void cmd_errors() {
 
 static void print_help() {
     cdc_print("Commands:\r\n");
-    cdc_print("  s               - Print live status\r\n");
-    cdc_print("  c               - Print live calibration data\r\n");
-    cdc_print("  e               - Print error log\r\n");
-    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccz, center, angle, damper)\r\n");
-    cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
-    cdc_print("  cw              - Write live calibration data to flash\r\n");
-    cdc_print("  help            - Print this help\r\n");
+    cdc_print("  s   - Print live status\r\n");
+    cdc_print("  c   - Print live calibration data\r\n");
+    cdc_print("  e   - Print error log\r\n");
+    cdc_print("  cw  - Write live calibration data to flash\r\n");
+    cdc_print("  cs  - Configuration Settings:\r\n");
+    cdc_print("        cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
+    cdc_print("        cs amin/amax <val>   - Set accelerator min/max\r\n");
+    cdc_print("        cs bmin/bmax <val>   - Set brake min/max\r\n");
+    cdc_print("        cs cwz/ccz <val>     - Set CW/CCW zero PWM\r\n");
+    cdc_print("        cs center <val>      - Set wheel center offset\r\n");
+    cdc_print("        cs angle <val>       - Set max wheel angle (>=180)\r\n");
+    cdc_print("        cs damper <val>      - Set system damper (0-10000)\r\n");
+    cdc_print("        cs maxpwm <val>      - Set forward max PWM (0-6249)\r\n");
+    cdc_print("        cs scale <val>       - Set force scale %\r\n");
+    cdc_print("        cs friction <val>    - Set friction fade force (0-10000)\r\n");
+    cdc_print("  help - Print this help\r\n");
 }
 
 static void cmd_cs(int argc, char** argv) {
@@ -467,6 +494,24 @@ static void cmd_cs(int argc, char** argv) {
                 return;
             }
             g_dbg_state->cal_state.system_damper_strength.store(val);
+        } else if (strcmp(var, "maxpwm") == 0) {
+            if (val < 0 || val > PWM_WRAP) {
+                cdc_print("ERR: maxpwm out of range\r\n");
+                return;
+            }
+            g_dbg_state->cal_state.forward_max_pwm.store(val);
+        } else if (strcmp(var, "scale") == 0) {
+            if (val < 0) {
+                cdc_print("ERR: scale must be >= 0\r\n");
+                return;
+            }
+            g_dbg_state->cal_state.force_scale_percent.store(val);
+        } else if (strcmp(var, "friction") == 0) {
+            if (val < 0 || val > 10000) {
+                cdc_print("ERR: friction must be 0 to 10000\r\n");
+                return;
+            }
+            g_dbg_state->cal_state.friction_fade_force.store(val);
         } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
                    strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
             uint16_t amin, amax, bmin, bmax;

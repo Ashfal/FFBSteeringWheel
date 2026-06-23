@@ -51,10 +51,9 @@ int32_t FFBProcessor::int_sin(uint32_t angle_centideg) {
 // Main calculation
 // =========================================================================
 
-FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
+int16_t FFBProcessor::calculate(int32_t position, int32_t velocity,
                                   EffectState& effects, int32_t max_half_angle_counts) {
-    FFBOutput out;
-    out.force = 0;
+    int32_t total_force = 0;
 
     // ---- Electronic End-Stop (Early Exit) ----
     // If wheel is beyond physical limit, apply a proportional reverse spring
@@ -75,17 +74,15 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         if (force > 10000) force = 10000;
         if (force < -10000) force = -10000;
 
-        out.force = force;
-        return out;
+        return static_cast<int16_t>(force);
     }
 
     // ---- Check if actuators are enabled and not paused ----
     if (!effects.actuators_enabled || effects.device_paused) {
-        return out;
+        return 0;
     }
 
     // ---- Accumulate forces from all active effects ----
-    int32_t total_force = 0;
     uint64_t now = time_us_64();
 
     int32_t scaled_pos = (position * 10000) / max_half_angle_counts;
@@ -210,9 +207,7 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     if (total_force < -10000) total_force = -10000;
 
     // Return unscaled output force
-    out.force = total_force;
-
-    return out;
+    return static_cast<int16_t>(total_force);
 }
 
 // =========================================================================

@@ -151,7 +151,7 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
         }
     }
     parser.init();
-    motor.init();
+    motor.init(&state.cal_state);
 
     state.led_status.set(SystemStatus::MotorSweepsActive);
     led.update();
@@ -280,8 +280,11 @@ void run_calibration(SharedState& state, ButtonReader& buttons, PedalReader& ped
         data.cw_speed[i] = state.cal_state.cw_speed[i].load();
         data.ccw_speed[i] = state.cal_state.ccw_speed[i].load();
     }
-    data.wheel_angle_deg = DEFAULT_MAX_WHEEL_ANGLE_DEG;
-    data.system_damper_strength = 0;
+    data.wheel_angle_deg = state.cal_state.wheel_angle_deg.load();
+    data.system_damper_strength = state.cal_state.system_damper_strength.load();
+    data.forward_max_pwm = state.cal_state.forward_max_pwm.load();
+    data.force_scale_percent = state.cal_state.force_scale_percent.load();
+    data.friction_fade_force = state.cal_state.friction_fade_force.load();
 
     // Use core1_running = false since Core 1 isn't running yet
     bool save_success = flash.save(data, false);

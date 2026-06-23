@@ -70,6 +70,9 @@ int main() {
             g_shared_state.cal_state.ccw_speed[i].store(cal_data.ccw_speed[i]);
         }
         g_shared_state.cal_state.system_damper_strength.store(cal_data.system_damper_strength);
+        g_shared_state.cal_state.forward_max_pwm.store(cal_data.forward_max_pwm);
+        g_shared_state.cal_state.force_scale_percent.store(cal_data.force_scale_percent);
+        g_shared_state.cal_state.friction_fade_force.store(cal_data.friction_fade_force);
         g_shared_state.cal_state.valid.store(true);
 
         g_shared_state.led_status.set(SystemStatus::BootWait);
@@ -82,6 +85,9 @@ int main() {
         g_shared_state.cal_state.max_half_angle_counts.store(max_half_angle_counts);
         g_shared_state.cal_state.wheel_angle_deg.store(DEFAULT_MAX_WHEEL_ANGLE_DEG);
         g_shared_state.cal_state.system_damper_strength.store(0);
+        g_shared_state.cal_state.forward_max_pwm.store(DEFAULT_FORWARD_MAX_PWM);
+        g_shared_state.cal_state.force_scale_percent.store(DEFAULT_FORCE_SCALE_PERCENT);
+        g_shared_state.cal_state.friction_fade_force.store(DEFAULT_FRICTION_FADE_FORCE);
 
         g_shared_state.led_status.set(SystemStatus::FlashCalMissing);
         debug_log_error(SystemStatus::FlashCalMissing);
