@@ -18,6 +18,7 @@ struct FlashCalibrationData {
     int32_t  ccw_speed[CAL_FORCE_LEVEL_COUNT];
     
     int32_t  wheel_angle_deg;
+    int32_t  system_damper_strength;
 
     uint32_t crc32;             // Integrity check
 };

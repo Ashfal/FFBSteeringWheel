@@ -43,7 +43,7 @@ constexpr int32_t ENCODER_COUNTS_PER_REV  = 4096;
 constexpr int32_t WHEEL_COUNTS_PER_REV    = ENCODER_COUNTS_PER_REV * 2;  // 8192
 
 // Physical wheel range default: 1080° total → ±540° from center
-constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1080;
+constexpr int32_t DEFAULT_MAX_WHEEL_ANGLE_DEG = 1800;
 
 
 // =========================================================================
@@ -172,7 +172,7 @@ constexpr uint8_t  MAX_EFFECTS           = 40;
 constexpr uint32_t LONG_PRESS_MS         = 5000;    // Hold > 5s for Flash cal
 
 // Flash calibration version
-constexpr uint32_t FLASH_DATA_VERSION    = 3;
+constexpr uint32_t FLASH_DATA_VERSION    = 4;
 
 // Overpower Detection
 constexpr int32_t DYNAMIC_DAMPING_FACTOR = 50;      // Tuning parameter for overpower opposition

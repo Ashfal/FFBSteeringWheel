@@ -98,6 +98,7 @@ struct CalibrationState {
     std::atomic<int32_t> center_offset{0};
     std::atomic<int32_t> max_half_angle_counts{12288};
     std::atomic<int32_t> wheel_angle_deg{1080};
+    std::atomic<int32_t> system_damper_strength{0};
 };
 
 // =========================================================================

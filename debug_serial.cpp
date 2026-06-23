@@ -166,6 +166,11 @@ static void cmd_calibration() {
     strcpy(p, "\r\n");
     cdc_print(buf);
 
+    p = buf; strcpy(p, "System Damper: "); p += 15;
+    p = int_to_str(g_dbg_state->cal_state.system_damper_strength.load(), p);
+    strcpy(p, "\r\n");
+    cdc_print(buf);
+
     uint16_t amin, amax, bmin, bmax;
     g_dbg_pedals->get_calibration(amin, amax, bmin, bmax);
 
@@ -221,6 +226,7 @@ static void cmd_save_calibration() {
     FlashCalibrationData data;
     data.center_position = g_dbg_state->cal_state.center_offset.load();
     data.wheel_angle_deg = g_dbg_state->cal_state.wheel_angle_deg.load();
+    data.system_damper_strength = g_dbg_state->cal_state.system_damper_strength.load();
     g_dbg_pedals->get_calibration(data.accel_min, data.accel_max, data.brake_min, data.brake_max);
     data.cw_zero_pwm = g_dbg_state->cal_state.cw_zero_pwm.load();
     data.ccw_zero_pwm = g_dbg_state->cal_state.ccw_zero_pwm.load();
@@ -410,7 +416,7 @@ static void print_help() {
     cdc_print("  s               - Print live status\r\n");
     cdc_print("  c               - Print live calibration data\r\n");
     cdc_print("  e               - Print error log\r\n");
-    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccz, center, angle)\r\n");
+    cdc_print("  cs <var> <val>  - Set cal variable (amin, amax, bmin, bmax, cwz, ccz, center, angle, damper)\r\n");
     cdc_print("  cs <lut> <idx> <val> - Set LUT value (lut: cwl, ccl; idx: 0-4)\r\n");
     cdc_print("  cw              - Write live calibration data to flash\r\n");
     cdc_print("  help            - Print this help\r\n");
@@ -455,6 +461,12 @@ static void cmd_cs(int argc, char** argv) {
             int32_t half_deg = val / 2;
             int32_t max_half_angle_counts = (half_deg * WHEEL_COUNTS_PER_REV) / 360;
             g_dbg_state->cal_state.max_half_angle_counts.store(max_half_angle_counts);
+        } else if (strcmp(var, "damper") == 0) {
+            if (val < 0 || val > 10000) {
+                cdc_print("ERR: damper must be 0 to 10000\r\n");
+                return;
+            }
+            g_dbg_state->cal_state.system_damper_strength.store(val);
         } else if (strcmp(var, "amin") == 0 || strcmp(var, "amax") == 0 || 
                    strcmp(var, "bmin") == 0 || strcmp(var, "bmax") == 0) {
             uint16_t amin, amax, bmin, bmax;

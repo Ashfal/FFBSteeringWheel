@@ -88,6 +88,11 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
     int32_t total_force = 0;
     uint64_t now = time_us_64();
 
+    int32_t scaled_pos = (position * 10000) / max_half_angle_counts;
+    int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY_CPS;
+    if (scaled_vel > 10000) scaled_vel = 10000;
+    else if (scaled_vel < -10000) scaled_vel = -10000;
+
     // Take spinlock to safely read effects (Core 0 might be updating them via USB)
     uint32_t irq = spin_lock_blocking(effects.lock);
 
@@ -124,11 +129,6 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
         uint32_t dir_angle = static_cast<uint32_t>(e.params.directionX) * 36000 / 255;
         int32_t angle_ratio = int_sin(dir_angle);
         int32_t force = 0;
-
-        int32_t scaled_pos = (position * 10000) / max_half_angle_counts;
-        int32_t scaled_vel = (velocity * 10000) / MAX_SAFE_VELOCITY_CPS;
-        if (scaled_vel > 10000) scaled_vel = 10000;
-        else if (scaled_vel < -10000) scaled_vel = -10000;
 
         switch (e.params.effectType) {
             case 1: force = calc_constant_force(e); break;              // Constant Force
@@ -169,6 +169,23 @@ FFBOutput FFBProcessor::calculate(int32_t position, int32_t velocity,
 
     // Apply device gain, reversing direction beecause DirectInput seems to go against HID spec
     total_force = -(total_force * effects.device_gain) / 255;
+
+    // ---- Firmware-Controlled Damper ----
+    int32_t hw_damper_str = cal_luts_ ? cal_luts_->system_damper_strength.load(std::memory_order_relaxed) : 0;
+    if (hw_damper_str > 0 && velocity != 0) {
+        EffectSlot hw_e;
+        hw_e.params.effectType = 9;
+        hw_e.condition[0].positiveCoefficient = -hw_damper_str;
+        hw_e.condition[0].negativeCoefficient = -hw_damper_str;
+        hw_e.condition[0].positiveSaturation = 10000;
+        hw_e.condition[0].negativeSaturation = 10000;
+        hw_e.condition[0].deadBand = 0;
+        hw_e.condition[0].cpOffset = 0;
+
+        int32_t coeff_percent = calc_condition_force(hw_e, scaled_vel, 0); 
+        int32_t req_force = lookup_required_force(velocity);
+        total_force += (coeff_percent * req_force) / 10000;
+    }
 
     // ---- Overpower Detection (Dynamic Damping) ----
     if (total_force != 0 && velocity != 0) {
